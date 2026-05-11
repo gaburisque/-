@@ -97,6 +97,9 @@ export async function signUp(formData: FormData) {
     redirect(`/signup?error=${encodeURIComponent("パスワードが一致しません")}`);
   }
 
+  const supabaseConnectionError =
+    "Supabaseに接続できません。環境変数とネットワーク設定を確認してください。";
+
   const { data, error } = await supabase.auth
     .signUp({
       email,
@@ -109,11 +112,14 @@ export async function signUp(formData: FormData) {
     })
     .catch(() => ({
       data: { user: null, session: null },
-      error: new Error("Supabaseに接続できません。.env.local の設定を確認してください。")
+      error: new Error(supabaseConnectionError)
     }));
 
   if (error) {
-    redirect(`/signup?error=${encodeURIComponent(error.message)}`);
+    const message = error.message.includes("fetch failed")
+      ? supabaseConnectionError
+      : error.message;
+    redirect(`/signup?error=${encodeURIComponent(message)}`);
   }
 
   if (data.user) {
