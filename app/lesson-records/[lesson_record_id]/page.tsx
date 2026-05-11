@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, CalendarDays, Clock, UserRound } from "lucide-react";
+import { ArrowLeft, CalendarDays, Clock, History, UserRound } from "lucide-react";
 
 import { updateLessonRecord } from "@/app/actions";
 import { AppShell } from "@/components/app-shell";
@@ -13,7 +13,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { emptyText, formatDate, formatTime, fullName } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
-import type { Course, LessonRecord } from "@/lib/types";
+import type { Course, LessonRecord, LessonRecordHistory } from "@/lib/types";
 
 function TextBlock({ title, value }: { title: string; value: string | null | undefined }) {
   return (
@@ -34,13 +34,19 @@ export default async function LessonRecordDetailPage({
   const { lesson_record_id: lessonRecordId } = await params;
   const supabase = await createClient();
 
-  const [recordResult, coursesResult] = await Promise.all([
+  const [recordResult, coursesResult, historyResult] = await Promise.all([
     supabase
       .from("lesson_records")
       .select("*,students(student_id,last_name,first_name,grade),courses(course_id,course_name),staff(staff_id,name)")
       .eq("lesson_record_id", lessonRecordId)
       .single(),
-    supabase.from("courses").select("course_id,course_name").eq("status", "active").order("course_name")
+    supabase.from("courses").select("course_id,course_name").eq("status", "active").order("course_name"),
+    supabase
+      .from("lesson_record_history")
+      .select("*")
+      .eq("lesson_record_id", lessonRecordId)
+      .order("changed_at", { ascending: false })
+      .limit(10)
   ]);
   const { data, error } = recordResult;
 
@@ -50,6 +56,7 @@ export default async function LessonRecordDetailPage({
 
   const record = data as LessonRecord;
   const courses = (coursesResult.data ?? []) as Pick<Course, "course_id" | "course_name">[];
+  const history = (historyResult.data ?? []) as LessonRecordHistory[];
   const startTime = record.start_time?.slice(0, 5) ?? "";
   const endTime = record.end_time?.slice(0, 5) ?? "";
 
@@ -174,6 +181,35 @@ export default async function LessonRecordDetailPage({
             </form>
           </CardContent>
         </Card>
+
+        {history.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                編集履歴（直近10件）
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="divide-y text-sm">
+                {history.map((h) => (
+                  <div key={h.history_id} className="py-3 space-y-1">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>{new Date(h.changed_at).toLocaleString("ja-JP")}</span>
+                      {h.lesson_date && <span>授業日: {formatDate(h.lesson_date)}</span>}
+                    </div>
+                    {h.title && <div><span className="font-medium">タイトル: </span>{h.title}</div>}
+                    {h.content && (
+                      <div className="whitespace-pre-wrap text-xs text-muted-foreground line-clamp-3">
+                        {h.content}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </AppShell>
   );

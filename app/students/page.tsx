@@ -96,8 +96,17 @@ export default async function StudentsPage({
 
         <Card>
           <CardHeader>
-            <CardTitle>生徒一覧</CardTitle>
-            <CardDescription>{students?.length ?? 0}件</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>生徒一覧</CardTitle>
+                <CardDescription>{students?.length ?? 0}件</CardDescription>
+              </div>
+              <a href="/api/students/export">
+                <Button variant="outline" size="sm" type="button">
+                  CSVダウンロード
+                </Button>
+              </a>
+            </div>
           </CardHeader>
           <CardContent>
             {students && students.length > 0 ? (

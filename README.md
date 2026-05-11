@@ -135,3 +135,10 @@ npm run build
 2. VercelのProduction/Preview連携設定
 3. PRテンプレート作成（確認項目を固定）
 4. 直近で追加したい機能を1つ選び、要件を最小化して `feature/*` で着手
+
+## 障害時チェック（最初に確認）
+
+- [ ] Supabaseプロジェクトの稼働状態を確認する（停止/一時停止していないか）
+- [ ] Vercelの環境変数（`NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`）を確認する
+- [ ] 環境変数の値に前後の空白や改行が混ざっていないか確認する
+- [ ] 環境変数更新後に `Redeploy` / `Clear cache and redeploy` を実行する

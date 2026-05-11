@@ -86,6 +86,42 @@ export type Staff = {
   role: string;
 };
 
+export type LessonRecordHistory = {
+  history_id: string;
+  lesson_record_id: string;
+  changed_by: string | null;
+  changed_at: string;
+  lesson_date: string | null;
+  attendance_status: string | null;
+  title: string | null;
+  content: string | null;
+  homework: string | null;
+  memo: string | null;
+};
+
+export type StudentDocument = {
+  document_id: string;
+  student_id: string;
+  uploaded_by: string | null;
+  file_name: string;
+  storage_path: string;
+  file_type: string | null;
+  tag: string | null;
+  notes: string | null;
+  created_at: string;
+  students?: Pick<Student, "student_id" | "last_name" | "first_name"> | null;
+};
+
+export type LessonAssignment = {
+  assignment_id: string;
+  enrollment_id: string;
+  staff_id: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  staff?: Pick<Staff, "staff_id" | "name"> | null;
+};
+
 export type LessonRecord = {
   lesson_record_id: string;
   student_id: string;
@@ -98,6 +134,7 @@ export type LessonRecord = {
   content: string | null;
   homework: string | null;
   memo: string | null;
+  attendance_status: string | null;
   created_at: string;
   updated_at: string;
   students?: Pick<Student, "student_id" | "last_name" | "first_name" | "grade"> | null;

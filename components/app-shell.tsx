@@ -1,5 +1,16 @@
 import Link from "next/link";
-import { BookOpen, ClipboardEdit, ClipboardList, LayoutDashboard, LogOut, UserCog, Users } from "lucide-react";
+import {
+  BookOpen,
+  CalendarCheck,
+  CalendarRange,
+  ClipboardEdit,
+  ClipboardList,
+  FileStack,
+  LayoutDashboard,
+  LogOut,
+  UserCog,
+  Users
+} from "lucide-react";
 
 import { signOut } from "@/app/actions";
 import { Button } from "@/components/ui/button";
@@ -9,6 +20,9 @@ const navItems = [
   { href: "/students", label: "Students", icon: Users },
   { href: "/lesson-records", label: "Lesson records", icon: ClipboardList },
   { href: "/lesson-records/new", label: "Record input", icon: ClipboardEdit },
+  { href: "/attendance", label: "Attendance", icon: CalendarCheck },
+  { href: "/schedule", label: "Schedule", icon: CalendarRange },
+  { href: "/documents", label: "Documents", icon: FileStack },
   { href: "/staff", label: "Staff", icon: UserCog }
 ];
 

@@ -98,7 +98,7 @@ export async function signUp(formData: FormData) {
   }
 
   const supabaseConnectionError =
-    "Supabaseに接続できません。環境変数とネットワーク設定を確認してください。";
+    "Supabaseに接続できません。Supabase稼働状況、環境変数、ネットワーク設定を確認してください。";
 
   const { data, error } = await supabase.auth
     .signUp({
@@ -372,6 +372,29 @@ export async function updateLessonRecord(formData: FormData) {
   const studentId = requiredText(formData, "student_id");
   const staffId = await ensureCurrentStaffId(supabase);
 
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  const { data: existing } = await supabase
+    .from("lesson_records")
+    .select("lesson_date,attendance_status,title,content,homework,memo")
+    .eq("lesson_record_id", lessonRecordId)
+    .single();
+
+  if (existing) {
+    await supabase.from("lesson_record_history").insert({
+      lesson_record_id: lessonRecordId,
+      changed_by: user?.id ?? null,
+      lesson_date: existing.lesson_date,
+      attendance_status: existing.attendance_status,
+      title: existing.title,
+      content: existing.content,
+      homework: existing.homework,
+      memo: existing.memo
+    });
+  }
+
   const { error } = await supabase
     .from("lesson_records")
     .update({
@@ -393,6 +416,41 @@ export async function updateLessonRecord(formData: FormData) {
   revalidatePath("/lesson-records");
   revalidatePath(`/lesson-records/${lessonRecordId}`);
   revalidatePath(`/students/${studentId}`);
+}
+
+export async function updateAttendanceStatus(formData: FormData) {
+  const supabase = await createClient();
+  const lessonRecordId = requiredText(formData, "lesson_record_id");
+  const date = optionalText(formData, "date") ?? "";
+  const status = optionalText(formData, "attendance_status");
+
+  const { error } = await supabase
+    .from("lesson_records")
+    .update({ attendance_status: status })
+    .eq("lesson_record_id", lessonRecordId);
+
+  if (error) throw error;
+
+  revalidatePath("/attendance");
+  redirect(`/attendance?date=${date}`);
+}
+
+export async function upsertLessonAssignment(formData: FormData) {
+  const supabase = await createClient();
+  const enrollmentId = requiredText(formData, "enrollment_id");
+  const weekday = optionalText(formData, "weekday") ?? "";
+  const staffIdValue = optionalText(formData, "staff_id");
+
+  if (!staffIdValue) {
+    await supabase.from("lesson_assignments").delete().eq("enrollment_id", enrollmentId);
+  } else {
+    await supabase
+      .from("lesson_assignments")
+      .upsert({ enrollment_id: enrollmentId, staff_id: staffIdValue }, { onConflict: "enrollment_id" });
+  }
+
+  revalidatePath("/schedule");
+  redirect(`/schedule?weekday=${weekday}`);
 }
 
 export async function addScheduledLessonRecord(formData: FormData) {
