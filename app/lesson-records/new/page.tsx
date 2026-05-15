@@ -12,7 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { normalizeCourseName } from "@/lib/courses";
+import { dedupeEnrollmentsByStudentCourseTime } from "@/lib/enrollments";
 import { formatTime, fullName } from "@/lib/format";
+import { formatGrade } from "@/lib/grades";
 import { lessonEndTimeOptions, lessonStartTimeOptions } from "@/lib/lesson-times";
 import { one } from "@/lib/relations";
 import { createClient } from "@/lib/supabase/server";
@@ -26,11 +29,6 @@ function today() {
     month: "2-digit",
     day: "2-digit"
   }).format(new Date());
-}
-
-function normalizeCourseName(courseName: string | null | undefined) {
-  if (!courseName) return "";
-  return courseName.replace(/^[A-ZＡ-Ｚ]\s*[:：]\s*/u, "").trim();
 }
 
 export default async function NewLessonRecordPage({
@@ -69,22 +67,9 @@ export default async function NewLessonRecordPage({
   const migrationRequired =
     Boolean(enrollmentsResult.error) &&
     enrollmentsResult.error?.message.toLowerCase().includes("weekday");
-  const enrollments = (enrollmentsResult.data ?? []) as Enrollment[];
-  const visibleEnrollments: Enrollment[] = [];
-  const seenEnrollmentKeys = new Set<string>();
-  for (const enrollment of enrollments) {
-    const studentId = one(enrollment.students)?.student_id;
-    const normalizedCourse = normalizeCourseName(one(enrollment.courses)?.course_name);
-    const startTime = enrollment.start_time ?? "";
-    if (!studentId || !normalizedCourse) {
-      visibleEnrollments.push(enrollment);
-      continue;
-    }
-    const key = `${studentId}::${normalizedCourse}::${startTime}`;
-    if (seenEnrollmentKeys.has(key)) continue;
-    seenEnrollmentKeys.add(key);
-    visibleEnrollments.push(enrollment);
-  }
+  const visibleEnrollments = dedupeEnrollmentsByStudentCourseTime(
+    (enrollmentsResult.data ?? []) as Enrollment[]
+  );
   const currentStaff = staffResult.data as Staff | null;
   const recorderName =
     currentStaff?.name ??
@@ -156,7 +141,7 @@ export default async function NewLessonRecordPage({
                             {one(enrollment.students) ? fullName(one(enrollment.students)!) : "-"}
                             {one(enrollment.students)?.grade ? (
                               <span className="ml-2 text-sm font-normal text-muted-foreground">
-                                {one(enrollment.students)?.grade}
+                                {formatGrade(one(enrollment.students)?.grade)}
                               </span>
                             ) : null}
                           </div>

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { normalizeGrade } from "@/lib/grades";
 import { createClient } from "@/lib/supabase/server";
 
 function optionalText(formData: FormData, key: string) {
@@ -156,7 +157,7 @@ export async function createStudent(formData: FormData) {
       first_name: requiredText(formData, "first_name"),
       last_name_kana: optionalText(formData, "last_name_kana"),
       first_name_kana: optionalText(formData, "first_name_kana"),
-      grade: optionalText(formData, "grade"),
+      grade: normalizeGrade(optionalText(formData, "grade")),
       school_id: optionalText(formData, "school_id"),
       birth_date: optionalText(formData, "birth_date"),
       gender: optionalText(formData, "gender"),
@@ -184,7 +185,7 @@ export async function updateStudent(formData: FormData) {
       first_name: requiredText(formData, "first_name"),
       last_name_kana: optionalText(formData, "last_name_kana"),
       first_name_kana: optionalText(formData, "first_name_kana"),
-      grade: optionalText(formData, "grade"),
+      grade: normalizeGrade(optionalText(formData, "grade")),
       school_id: optionalText(formData, "school_id"),
       birth_date: optionalText(formData, "birth_date"),
       gender: optionalText(formData, "gender"),

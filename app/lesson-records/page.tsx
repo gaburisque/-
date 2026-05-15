@@ -11,7 +11,9 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { normalizeCourseName, uniqueCoursesByCanonicalName } from "@/lib/courses";
 import { emptyText, formatDate, formatTime, fullName, previewText } from "@/lib/format";
+import { formatGrade } from "@/lib/grades";
 import {
   lessonRecordSortOptions,
   parseLessonRecordSort,
@@ -48,7 +50,7 @@ export default async function LessonRecordsPage({
   ]);
 
   const students = (studentsResult.data ?? []) as Student[];
-  const courses = (coursesResult.data ?? []) as Course[];
+  const courses = uniqueCoursesByCanonicalName((coursesResult.data ?? []) as Course[]);
   const years = Array.from(
     new Set(
       (yearsResult.data ?? [])
@@ -114,7 +116,8 @@ export default async function LessonRecordsPage({
                   <option value="">すべての生徒</option>
                   {students.map((student) => (
                     <option key={student.student_id} value={student.student_id}>
-                      {fullName(student)} {student.grade ? ` / ${student.grade}` : ""}
+                      {fullName(student)}
+                      {student.grade ? ` / ${formatGrade(student.grade)}` : ""}
                     </option>
                   ))}
                 </NativeSelect>
@@ -187,7 +190,9 @@ export default async function LessonRecordsPage({
                           "-"
                         )}
                       </TableCell>
-                      <TableCell className="py-2 align-top">{record.courses?.course_name ?? "-"}</TableCell>
+                      <TableCell className="py-2 align-top">
+                        {normalizeCourseName(record.courses?.course_name) || "-"}
+                      </TableCell>
                       <TableCell className="py-2 align-top">
                         <Link
                           href={`/lesson-records/${record.lesson_record_id}`}
@@ -251,7 +256,7 @@ export default async function LessonRecordsPage({
                   <option value="">未選択</option>
                   {courses.map((course) => (
                     <option key={course.course_id} value={course.course_id}>
-                      {course.course_name}
+                      {normalizeCourseName(course.course_name)}
                     </option>
                   ))}
                 </NativeSelect>

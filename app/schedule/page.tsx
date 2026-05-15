@@ -7,10 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { upsertLessonAssignment } from "@/app/actions";
+import { normalizeCourseName } from "@/lib/courses";
+import { dedupeEnrollmentsByStudentCourseTime } from "@/lib/enrollments";
 import { formatTime, fullName } from "@/lib/format";
+import { formatGrade } from "@/lib/grades";
+import { one } from "@/lib/relations";
 import { createClient } from "@/lib/supabase/server";
+import type { Enrollment, Staff } from "@/lib/types";
 import { weekdayOptions } from "@/lib/weekdays";
-import type { Staff } from "@/lib/types";
 
 export default async function SchedulePage({
   searchParams
@@ -37,13 +41,8 @@ export default async function SchedulePage({
       .select("assignment_id,enrollment_id,staff_id,staff(name)")
   ]);
 
-  const enrollments = (enrollmentsResult.data ?? []) as unknown as {
-    enrollment_id: string;
-    weekday: string | null;
-    start_time: string | null;
-    students: { student_id: string; last_name: string; first_name: string; grade: string | null } | null;
-    courses: { course_name: string } | null;
-  }[];
+  const allEnrollments = (enrollmentsResult.data ?? []) as Enrollment[];
+  const enrollments = dedupeEnrollmentsByStudentCourseTime(allEnrollments);
 
   const staffList = (staffResult.data ?? []) as Staff[];
 
@@ -53,6 +52,34 @@ export default async function SchedulePage({
       { assignment_id: a.assignment_id, staff_id: a.staff_id, staff: a.staff }
     ])
   );
+
+  function enrollmentKey(enrollment: Enrollment) {
+    const studentId = one(enrollment.students)?.student_id ?? "";
+    const course = normalizeCourseName(one(enrollment.courses)?.course_name);
+    const startTime = enrollment.start_time ?? "";
+    return `${studentId}::${course}::${startTime}`;
+  }
+
+  const enrollmentIdsByKey = new Map<string, string[]>();
+  for (const enrollment of allEnrollments) {
+    const studentId = one(enrollment.students)?.student_id;
+    const course = normalizeCourseName(one(enrollment.courses)?.course_name);
+    const key = enrollmentKey(enrollment);
+    if (studentId && course) {
+      const ids = enrollmentIdsByKey.get(key) ?? [];
+      ids.push(enrollment.enrollment_id);
+      enrollmentIdsByKey.set(key, ids);
+    }
+  }
+
+  function findAssignment(enrollment: Enrollment) {
+    const ids = enrollmentIdsByKey.get(enrollmentKey(enrollment)) ?? [enrollment.enrollment_id];
+    for (const id of ids) {
+      const assignment = assignmentMap.get(id);
+      if (assignment) return assignment;
+    }
+    return undefined;
+  }
 
   return (
     <AppShell>
@@ -93,20 +120,20 @@ export default async function SchedulePage({
                 </TableHeader>
                 <TableBody>
                   {enrollments.map((enrollment) => {
-                    const assignment = assignmentMap.get(enrollment.enrollment_id);
+                    const assignment = findAssignment(enrollment);
                     const assignedStaff = assignment?.staff as { name: string } | null | undefined;
+                    const student = one(enrollment.students);
+                    const courseName = normalizeCourseName(one(enrollment.courses)?.course_name);
                     return (
                       <TableRow key={enrollment.enrollment_id}>
                         <TableCell className="whitespace-nowrap text-sm">
                           {formatTime(enrollment.start_time)}
                         </TableCell>
                         <TableCell>
-                          {enrollment.students ? fullName(enrollment.students) : "-"}
-                          <div className="text-xs text-muted-foreground">
-                            {enrollment.students?.grade ?? ""}
-                          </div>
+                          {student ? fullName(student) : "-"}
+                          <div className="text-xs text-muted-foreground">{formatGrade(student?.grade)}</div>
                         </TableCell>
-                        <TableCell>{enrollment.courses?.course_name ?? "-"}</TableCell>
+                        <TableCell>{courseName || "-"}</TableCell>
                         <TableCell>
                           {assignedStaff ? (
                             <span className="font-medium">{assignedStaff.name}</span>

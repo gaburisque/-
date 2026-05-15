@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { normalizeGrade } from "@/lib/grades";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET() {
@@ -40,7 +41,7 @@ export async function GET() {
       s.first_name,
       s.last_name_kana ?? "",
       s.first_name_kana ?? "",
-      s.grade ?? "",
+      normalizeGrade(s.grade) ?? "",
       (school as { school_name: string } | null)?.school_name ?? "",
       s.birth_date ?? "",
       s.gender ?? "",

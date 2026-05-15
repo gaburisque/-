@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDate, fullName } from "@/lib/format";
+import { formatGrade } from "@/lib/grades";
 import { one } from "@/lib/relations";
 import { createClient } from "@/lib/supabase/server";
 import type { Student } from "@/lib/types";
@@ -97,7 +98,7 @@ export default async function DashboardPage() {
                           {fullName(student)}
                         </Link>
                       </TableCell>
-                      <TableCell>{student.grade ?? "-"}</TableCell>
+                      <TableCell>{formatGrade(student.grade)}</TableCell>
                       <TableCell>{one(student.schools)?.school_name ?? "-"}</TableCell>
                       <TableCell>
                         <Badge>{student.status}</Badge>

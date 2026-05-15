@@ -21,7 +21,8 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { emptyText, formatDate, formatTime, fullName, previewText } from "@/lib/format";
-import { gradeOptions } from "@/lib/grades";
+import { formatGrade, gradeOptions, normalizeGrade } from "@/lib/grades";
+import { normalizeCourseName, uniqueCoursesByCanonicalName } from "@/lib/courses";
 import {
   lessonRecordSortOptions,
   parseLessonRecordSort,
@@ -110,7 +111,7 @@ export default async function StudentDetailPage({
       : lessonRecords,
     lessonSort
   );
-  const courses = (coursesResult.data ?? []) as Course[];
+  const courses = uniqueCoursesByCanonicalName((coursesResult.data ?? []) as Course[]);
 
   return (
     <AppShell>
@@ -122,7 +123,8 @@ export default async function StudentDetailPage({
             </Link>
             <h1 className="mt-2 text-2xl font-semibold tracking-normal">{fullName(student)}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {student.grade ?? "学年未設定"} / {one(student.schools)?.school_name ?? "学校未設定"}
+              {formatGrade(student.grade) === "-" ? "学年未設定" : formatGrade(student.grade)} /{" "}
+              {one(student.schools)?.school_name ?? "学校未設定"}
             </p>
           </div>
           <Button asChild>
@@ -159,7 +161,7 @@ export default async function StudentDetailPage({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="grade">学年</Label>
-                <NativeSelect id="grade" name="grade" defaultValue={student.grade ?? ""}>
+                <NativeSelect id="grade" name="grade" defaultValue={normalizeGrade(student.grade) ?? ""}>
                   <option value="">未選択</option>
                   {gradeOptions.map((grade) => (
                     <option key={grade} value={grade}>
@@ -348,7 +350,9 @@ export default async function StudentDetailPage({
                 <TableBody>
                   {enrollments.map((enrollment) => (
                     <TableRow key={enrollment.enrollment_id}>
-                      <TableCell>{one(enrollment.courses)?.course_name ?? "-"}</TableCell>
+                      <TableCell>
+                        {normalizeCourseName(one(enrollment.courses)?.course_name) || "-"}
+                      </TableCell>
                       <TableCell>
                         <form id={`enrollment-${enrollment.enrollment_id}`} action={updateEnrollmentSchedule}>
                           <input type="hidden" name="enrollment_id" value={enrollment.enrollment_id} />
@@ -422,7 +426,7 @@ export default async function StudentDetailPage({
                 <option value="">コースを選択</option>
                 {courses.map((course) => (
                   <option key={course.course_id} value={course.course_id}>
-                    {course.course_name}
+                    {normalizeCourseName(course.course_name)}
                   </option>
                 ))}
               </NativeSelect>
@@ -503,7 +507,9 @@ export default async function StudentDetailPage({
                     <TableRow key={record.lesson_record_id}>
                       <TableCell className="whitespace-nowrap py-2 align-top">{formatDate(record.lesson_date)}</TableCell>
                       <TableCell className="whitespace-nowrap py-2 align-top">{formatTime(record.start_time)}</TableCell>
-                      <TableCell className="py-2 align-top">{record.courses?.course_name ?? "-"}</TableCell>
+                      <TableCell className="py-2 align-top">
+                        {normalizeCourseName(record.courses?.course_name) || "-"}
+                      </TableCell>
                       <TableCell className="py-2 align-top">
                         <Link
                           href={`/lesson-records/${record.lesson_record_id}`}

@@ -13,7 +13,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { fullName } from "@/lib/format";
-import { gradeOptions } from "@/lib/grades";
+import { formatGrade, gradeOptions } from "@/lib/grades";
 import { one } from "@/lib/relations";
 import { createClient } from "@/lib/supabase/server";
 import type { School, Student } from "@/lib/types";
@@ -134,7 +134,7 @@ export default async function StudentsPage({
                           {[student.last_name_kana, student.first_name_kana].filter(Boolean).join(" ") || "-"}
                         </div>
                       </TableCell>
-                      <TableCell>{student.grade ?? "-"}</TableCell>
+                      <TableCell>{formatGrade(student.grade)}</TableCell>
                       <TableCell>{one(student.schools)?.school_name ?? "-"}</TableCell>
                       <TableCell>
                         <div>{student.phone ?? "-"}</div>

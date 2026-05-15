@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { normalizeCourseName, uniqueCoursesByCanonicalName } from "@/lib/courses";
 import { emptyText, formatDate, formatTime, fullName } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 import type { Course, LessonRecord, LessonRecordHistory } from "@/lib/types";
@@ -55,7 +56,9 @@ export default async function LessonRecordDetailPage({
   }
 
   const record = data as LessonRecord;
-  const courses = (coursesResult.data ?? []) as Pick<Course, "course_id" | "course_name">[];
+  const courses = uniqueCoursesByCanonicalName(
+    (coursesResult.data ?? []) as Pick<Course, "course_id" | "course_name">[]
+  );
   const history = (historyResult.data ?? []) as LessonRecordHistory[];
   const startTime = record.start_time?.slice(0, 5) ?? "";
   const endTime = record.end_time?.slice(0, 5) ?? "";
@@ -107,7 +110,7 @@ export default async function LessonRecordDetailPage({
             </div>
             <div>
               <div className="text-xs text-muted-foreground">コース</div>
-              <div className="mt-1 font-medium">{record.courses?.course_name ?? "-"}</div>
+              <div className="mt-1 font-medium">{normalizeCourseName(record.courses?.course_name) || "-"}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">記録者</div>
@@ -146,7 +149,7 @@ export default async function LessonRecordDetailPage({
                   <option value="">未選択</option>
                   {courses.map((course) => (
                     <option key={course.course_id} value={course.course_id}>
-                      {course.course_name}
+                      {normalizeCourseName(course.course_name)}
                     </option>
                   ))}
                 </NativeSelect>

@@ -7,7 +7,9 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { updateAttendanceStatus } from "@/app/actions";
+import { normalizeCourseName } from "@/lib/courses";
 import { formatDate, formatTime, fullName } from "@/lib/format";
+import { formatGrade } from "@/lib/grades";
 import { createClient } from "@/lib/supabase/server";
 
 const ATTENDANCE_LABELS: Record<string, string> = {
@@ -123,9 +125,11 @@ export default async function AttendancePage({
                       </TableCell>
                       <TableCell>
                         {record.students ? fullName(record.students) : "-"}
-                        <div className="text-xs text-muted-foreground">{record.students?.grade ?? ""}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {formatGrade(record.students?.grade)}
+                        </div>
                       </TableCell>
-                      <TableCell>{record.courses?.course_name ?? "-"}</TableCell>
+                      <TableCell>{normalizeCourseName(record.courses?.course_name) || "-"}</TableCell>
                       <TableCell>{record.staff?.name ?? "-"}</TableCell>
                       <TableCell>
                         {record.attendance_status ? (
