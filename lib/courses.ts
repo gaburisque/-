@@ -1,5 +1,5 @@
 /** 運用で使う正式コース名（4種） */
-export const CANONICAL_COURSE_NAMES = ["scratch", "Roblox", "ITオンライン部", "イラスト"] as const;
+export const CANONICAL_COURSE_NAMES = ["Scratch", "Roblox", "ITオンライン部", "イラスト"] as const;
 
 export type CanonicalCourseName = (typeof CANONICAL_COURSE_NAMES)[number];
 
@@ -9,11 +9,12 @@ export type CanonicalCourseName = (typeof CANONICAL_COURSE_NAMES)[number];
 export function normalizeCourseName(courseName: string | null | undefined): string {
   if (!courseName) return "";
 
-  const stripped = courseName.replace(/^[A-ZＡ-Ｚ]\s*[:：#＃]?\s*/u, "").trim();
+  // A:スクラッチ / B:＃ITオンライン部 などのクラス接頭辞のみ除去（Roblox の R は残す）
+  const stripped = courseName.replace(/^[A-ZＡ-Ｚ]\s*[:：#＃]\s*/u, "").trim();
   const lower = stripped.toLowerCase();
 
   if (stripped.includes("スクラッチ") || lower.includes("scratch")) {
-    return "scratch";
+    return "Scratch";
   }
   if (stripped.includes("ロブロ") || lower.includes("roblox")) {
     return "Roblox";

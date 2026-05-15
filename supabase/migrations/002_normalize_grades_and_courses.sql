@@ -39,7 +39,7 @@ where course_id in ('06b9fb6f-8f05-5863-b5a0-be511f0ce995');
 update public.lesson_records set course_id = 'c6f4fbdc-b7ea-5a44-8064-acf91a14dc35'
 where course_id in ('06b9fb6f-8f05-5863-b5a0-be511f0ce995');
 
-update public.courses set course_name = 'scratch', status = 'active'
+update public.courses set course_name = 'Scratch', status = 'active'
 where course_id = '397ecd10-d1aa-5be5-8cb1-cbc4687d26f9';
 
 update public.courses set course_name = 'Roblox', status = 'active'
