@@ -28,7 +28,7 @@ export default async function StaffPage() {
     <AppShell>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Staff</h1>
+          <h1 className="text-2xl font-semibold tracking-normal">スタッフ</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             記録者として表示する先生情報を管理します。
           </p>
@@ -117,7 +117,7 @@ export default async function StaffPage() {
           <CardHeader>
             <CardTitle>先生を追加</CardTitle>
             <CardDescription>
-              ログインする先生は `/signup` またはSupabase Authでアカウント作成してください。
+              ログイン用アカウントは Supabase Dashboard の Authentication から管理者が作成します。
             </CardDescription>
           </CardHeader>
           <CardContent>

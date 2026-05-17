@@ -88,7 +88,7 @@ export default async function SchedulePage() {
     <AppShell>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Schedule</h1>
+          <h1 className="text-2xl font-semibold tracking-normal">スケジュール</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             週次の授業スケジュールと担当割り当て。コマをクリックして担当を編集できます。
           </p>

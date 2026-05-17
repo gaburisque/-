@@ -114,7 +114,7 @@ export default function DocumentsPage() {
     <AppShell>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Documents</h1>
+          <h1 className="text-2xl font-semibold tracking-normal">教材</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             生徒の教材・賞状・PDFなどを管理します。
           </p>

@@ -14,16 +14,17 @@ import {
 
 import { signOut } from "@/app/actions";
 import { Button } from "@/components/ui/button";
+import { APP_NAME } from "@/lib/branding";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/students", label: "Students", icon: Users },
-  { href: "/lesson-records", label: "Lesson records", icon: ClipboardList },
-  { href: "/lesson-records/new", label: "Record input", icon: ClipboardEdit },
-  { href: "/attendance", label: "Attendance", icon: CalendarCheck },
-  { href: "/schedule", label: "Schedule", icon: CalendarRange },
-  { href: "/documents", label: "Documents", icon: FileStack },
-  { href: "/staff", label: "Staff", icon: UserCog }
+  { href: "/dashboard", label: "ダッシュボード", icon: LayoutDashboard },
+  { href: "/students", label: "生徒", icon: Users },
+  { href: "/lesson-records", label: "授業記録", icon: ClipboardList },
+  { href: "/lesson-records/new", label: "記録入力", icon: ClipboardEdit },
+  { href: "/attendance", label: "出席", icon: CalendarCheck },
+  { href: "/schedule", label: "スケジュール", icon: CalendarRange },
+  { href: "/documents", label: "教材", icon: FileStack },
+  { href: "/staff", label: "スタッフ", icon: UserCog }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -35,7 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <BookOpen className="h-5 w-5" />
             </span>
-            <span>生徒情報管理</span>
+            <span>{APP_NAME}</span>
           </Link>
           <form action={signOut}>
             <Button variant="ghost" size="sm" type="submit">

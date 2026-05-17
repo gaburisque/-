@@ -1,6 +1,6 @@
-# 生徒情報管理アプリ
+# ClassNote
 
-学習塾・教室向けの生徒管理Webアプリです。Next.js、TypeScript、Supabase、PostgreSQL、Tailwind CSS、shadcn/ui相当のローカルUIコンポーネントで構成しています。
+学習塾・教室向けの生徒管理Webアプリ（ClassNote）です。Next.js、TypeScript、Supabase、PostgreSQL、Tailwind CSS、shadcn/ui相当のローカルUIコンポーネントで構成しています。
 
 ## 機能
 

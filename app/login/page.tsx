@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { signIn } from "@/app/actions";
 import { Button } from "@/components/ui/button";
+import { APP_DESCRIPTION, APP_NAME } from "@/lib/branding";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,8 +14,9 @@ function LoginForm({
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle>ログイン</CardTitle>
-        <CardDescription>Supabase Authのアカウントでログインしてください。</CardDescription>
+        <p className="text-sm font-semibold text-primary">{APP_NAME}</p>
+        <CardTitle className="mt-1">ログイン</CardTitle>
+        <CardDescription>{APP_DESCRIPTION}</CardDescription>
       </CardHeader>
       <CardContent>
         <form action={signIn} className="space-y-4">

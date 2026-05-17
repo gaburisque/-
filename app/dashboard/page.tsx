@@ -37,7 +37,7 @@ export default async function DashboardPage() {
     <AppShell>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Dashboard</h1>
+          <h1 className="text-2xl font-semibold tracking-normal">ダッシュボード</h1>
           <p className="mt-1 text-sm text-muted-foreground">生徒と授業記録の状況を確認します。</p>
         </div>
 

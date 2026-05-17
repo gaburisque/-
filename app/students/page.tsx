@@ -59,7 +59,7 @@ export default async function StudentsPage({
     <AppShell>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Students</h1>
+          <h1 className="text-2xl font-semibold tracking-normal">生徒</h1>
           <p className="mt-1 text-sm text-muted-foreground">生徒一覧、検索、登録を行います。</p>
         </div>
 

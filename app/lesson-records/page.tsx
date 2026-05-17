@@ -95,7 +95,7 @@ export default async function LessonRecordsPage({
     <AppShell>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Lesson records</h1>
+          <h1 className="text-2xl font-semibold tracking-normal">授業記録</h1>
           <p className="mt-1 text-sm text-muted-foreground">授業記録の閲覧と登録を行います。</p>
         </div>
         <div>
@@ -109,8 +109,8 @@ export default async function LessonRecordsPage({
             <CardTitle>フィルター</CardTitle>
           </CardHeader>
           <CardContent>
-            <form className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_130px_120px_180px_180px_190px_auto]">
-              <div className="relative">
+            <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="relative sm:col-span-2 lg:col-span-3">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <NativeSelect name="student_id" defaultValue={params.student_id ?? ""} className="pl-9">
                   <option value="">すべての生徒</option>
@@ -140,14 +140,23 @@ export default async function LessonRecordsPage({
               </NativeSelect>
               <Input name="from" type="date" defaultValue={params.from ?? ""} aria-label="開始日" />
               <Input name="to" type="date" defaultValue={params.to ?? ""} aria-label="終了日" />
-              <NativeSelect name="sort" defaultValue={sort} aria-label="並び替え">
-                {lessonRecordSortOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </NativeSelect>
-              <Button type="submit">絞り込み</Button>
+              <div className="flex flex-col gap-3 sm:col-span-2 lg:col-span-3 sm:flex-row sm:items-end">
+                <NativeSelect
+                  name="sort"
+                  defaultValue={sort}
+                  aria-label="並び替え"
+                  className="min-w-0 flex-1"
+                >
+                  {lessonRecordSortOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+                <Button type="submit" className="shrink-0 sm:w-auto">
+                  絞り込み
+                </Button>
+              </div>
             </form>
           </CardContent>
         </Card>

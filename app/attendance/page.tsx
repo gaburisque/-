@@ -52,7 +52,7 @@ export default async function AttendancePage({
     <AppShell>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Attendance</h1>
+          <h1 className="text-2xl font-semibold tracking-normal">出席</h1>
           <p className="mt-1 text-sm text-muted-foreground">日ごとの出欠を確認・更新します。</p>
         </div>
 
