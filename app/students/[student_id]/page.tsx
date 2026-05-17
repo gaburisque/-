@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ClipboardPlus, Phone, UserRoundPlus } from "lucide-react";
+import { ClipboardPlus, Download, Phone, UserRoundPlus } from "lucide-react";
 
 import {
   addEmergencyContact,
@@ -9,6 +9,7 @@ import {
   updateEnrollmentSchedule,
   updateStudent
 } from "@/app/actions";
+import { DeleteLessonRecordButton } from "@/components/delete-lesson-record-button";
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -463,13 +464,26 @@ export default async function StudentDetailPage({
 
         <Card>
           <CardHeader>
-            <CardTitle>授業履歴</CardTitle>
-            <CardDescription>
-              {visibleLessonRecords.length}件 / {lessonRecordSortOptions.find((option) => option.value === lessonSort)?.label}
-            </CardDescription>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>授業履歴</CardTitle>
+                <CardDescription className="mt-1">
+                  全{lessonRecords.length}件
+                  {resolvedSearchParams.lesson_year ? ` / ${resolvedSearchParams.lesson_year}年：${visibleLessonRecords.length}件` : ""}
+                  {" · "}
+                  {lessonRecordSortOptions.find((option) => option.value === lessonSort)?.label}
+                </CardDescription>
+              </div>
+              <Button asChild variant="outline" size="sm">
+                <a href={`/api/lesson-records/export?student_id=${student.student_id}`} download>
+                  <Download className="h-4 w-4" />
+                  CSV出力
+                </a>
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <form className="grid gap-3 md:grid-cols-[160px_220px_auto]">
+            <form className="flex flex-wrap gap-2">
               <NativeSelect name="lesson_year" defaultValue={resolvedSearchParams.lesson_year ?? ""} aria-label="年">
                 <option value="">すべての年</option>
                 {lessonYears.map((year) => (
@@ -485,61 +499,104 @@ export default async function StudentDetailPage({
                   </option>
                 ))}
               </NativeSelect>
-              <Button type="submit" variant="secondary">
+              <Button type="submit" variant="secondary" size="sm">
                 表示
               </Button>
             </form>
             {visibleLessonRecords.length > 0 ? (
-              <Table className="min-w-[900px] table-fixed">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[112px]">日付</TableHead>
-                    <TableHead className="w-[72px]">時間</TableHead>
-                    <TableHead className="w-[130px]">コース</TableHead>
-                    <TableHead className="w-[220px]">タイトル</TableHead>
-                    <TableHead>内容</TableHead>
-                    <TableHead className="w-[220px]">宿題</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visibleLessonRecords.map((record) => (
-                    <TableRow key={record.lesson_record_id}>
-                      <TableCell className="whitespace-nowrap py-2 align-top">{formatDate(record.lesson_date)}</TableCell>
-                      <TableCell className="whitespace-nowrap py-2 align-top">{formatTime(record.start_time)}</TableCell>
-                      <TableCell className="py-2 align-top">
-                        {normalizeCourseName(record.courses?.course_name) || "-"}
-                      </TableCell>
-                      <TableCell className="py-2 align-top">
-                        <Link
-                          href={`/lesson-records/${record.lesson_record_id}`}
-                          className="line-clamp-2 font-medium leading-5 text-primary hover:underline"
-                          title={emptyText(record.title)}
-                        >
-                          {emptyText(record.title)}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="py-2 align-top">
-                        <Link
-                          href={`/lesson-records/${record.lesson_record_id}`}
-                          className="line-clamp-2 leading-5 hover:text-primary"
-                          title={emptyText(record.content)}
-                        >
-                          {previewText(record.content, 120)}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="py-2 align-top">
-                        <Link
-                          href={`/lesson-records/${record.lesson_record_id}`}
-                          className="line-clamp-2 leading-5 hover:text-primary"
-                          title={emptyText(record.homework)}
-                        >
-                          {previewText(record.homework, 80)}
-                        </Link>
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table className="min-w-[860px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[100px]">日付</TableHead>
+                      <TableHead className="w-[60px]">時間</TableHead>
+                      <TableHead className="w-[64px]">出欠</TableHead>
+                      <TableHead className="w-[110px]">コース</TableHead>
+                      <TableHead className="w-[180px]">タイトル</TableHead>
+                      <TableHead>内容</TableHead>
+                      <TableHead className="w-[170px]">宿題</TableHead>
+                      <TableHead className="w-[52px]" />
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleLessonRecords.map((record) => (
+                      <TableRow key={record.lesson_record_id} className="group">
+                        <TableCell className="whitespace-nowrap py-2 align-top text-sm">
+                          {formatDate(record.lesson_date)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap py-2 align-top text-xs font-mono text-muted-foreground">
+                          {formatTime(record.start_time)}
+                        </TableCell>
+                        <TableCell className="py-2 align-top">
+                          {record.attendance_status ? (
+                            <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${
+                              record.attendance_status === "present" ? "bg-green-100 text-green-800" :
+                              record.attendance_status === "absent" ? "bg-red-100 text-red-800" :
+                              record.attendance_status === "late" ? "bg-yellow-100 text-yellow-800" :
+                              "bg-blue-100 text-blue-800"
+                            }`}>
+                              {record.attendance_status === "present" ? "出席" :
+                               record.attendance_status === "absent" ? "欠席" :
+                               record.attendance_status === "late" ? "遅刻" : "振替"}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-2 align-top">
+                          <span className={`inline-flex items-center gap-1.5 text-sm`}>
+                            <span className={`h-2 w-2 shrink-0 rounded-full ${
+                              normalizeCourseName(record.courses?.course_name) === "Scratch" ? "bg-blue-400" :
+                              normalizeCourseName(record.courses?.course_name) === "Roblox" ? "bg-green-500" :
+                              normalizeCourseName(record.courses?.course_name) === "ITオンライン部" ? "bg-purple-500" :
+                              normalizeCourseName(record.courses?.course_name) === "イラスト" ? "bg-orange-400" :
+                              "bg-gray-300"
+                            }`} />
+                            {normalizeCourseName(record.courses?.course_name) || "-"}
+                          </span>
+                        </TableCell>
+                        <TableCell className="py-2 align-top">
+                          <Link
+                            href={`/lesson-records/${record.lesson_record_id}`}
+                            className="line-clamp-2 text-sm font-medium leading-5 text-primary hover:underline"
+                            title={emptyText(record.title)}
+                          >
+                            {emptyText(record.title)}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="py-2 align-top">
+                          <Link
+                            href={`/lesson-records/${record.lesson_record_id}`}
+                            className="line-clamp-2 text-sm leading-5 hover:text-primary"
+                            title={emptyText(record.content)}
+                          >
+                            {previewText(record.content, 100)}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="py-2 align-top">
+                          <Link
+                            href={`/lesson-records/${record.lesson_record_id}`}
+                            className="line-clamp-2 text-sm leading-5 hover:text-primary"
+                            title={emptyText(record.homework)}
+                          >
+                            {previewText(record.homework, 70)}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="py-2 align-top opacity-0 transition-opacity group-hover:opacity-100">
+                          <DeleteLessonRecordButton
+                            lessonRecordId={record.lesson_record_id}
+                            studentId={student.student_id}
+                            redirectTo={`/students/${student.student_id}`}
+                            variant="ghost"
+                            size="icon"
+                            label=""
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             ) : (
               <EmptyState>授業記録がありません。</EmptyState>
             )}

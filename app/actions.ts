@@ -23,7 +23,7 @@ function requiredText(formData: FormData, key: string) {
 function structuredNote(items: Array<[string, string | null]>) {
   return items
     .filter(([, value]) => value && value.trim().length > 0)
-    .map(([label, value]) => `${label}: ${value}`)
+    .map(([label, value]) => `${label}：${value}`)
     .join("\n\n");
 }
 
@@ -354,6 +354,7 @@ export async function updateLessonRecord(formData: FormData) {
     .update({
       lesson_date: requiredText(formData, "lesson_date"),
       course_id: optionalText(formData, "course_id"),
+      attendance_status: optionalText(formData, "attendance_status"),
       start_time: optionalText(formData, "start_time"),
       end_time: optionalText(formData, "end_time"),
       title: optionalText(formData, "title"),
@@ -389,6 +390,46 @@ export async function updateAttendanceStatus(formData: FormData) {
   redirect(`/attendance?date=${date}`);
 }
 
+export async function deleteLessonRecord(formData: FormData) {
+  const supabase = await createClient();
+  const lessonRecordId = requiredText(formData, "lesson_record_id");
+  const studentId = optionalText(formData, "student_id");
+  const redirectTo = optionalText(formData, "redirect_to") ?? "/lesson-records";
+
+  const { error } = await supabase
+    .from("lesson_records")
+    .delete()
+    .eq("lesson_record_id", lessonRecordId);
+
+  if (error) throw error;
+
+  revalidatePath("/lesson-records");
+  revalidatePath("/dashboard");
+  if (studentId) {
+    revalidatePath(`/students/${studentId}`);
+  }
+  redirect(redirectTo);
+}
+
+export async function bulkUpdateAttendanceStatus(formData: FormData) {
+  const supabase = await createClient();
+  const ids = formData.getAll("lesson_record_id") as string[];
+  const statuses = formData.getAll("attendance_status") as string[];
+  const date = optionalText(formData, "date") ?? "";
+
+  await Promise.all(
+    ids.map((id, i) =>
+      supabase
+        .from("lesson_records")
+        .update({ attendance_status: statuses[i] || null })
+        .eq("lesson_record_id", id)
+    )
+  );
+
+  revalidatePath("/attendance");
+  redirect(`/attendance?date=${date}`);
+}
+
 export async function upsertLessonAssignment(formData: FormData) {
   const supabase = await createClient();
   const enrollmentId = requiredText(formData, "enrollment_id");
@@ -419,6 +460,7 @@ export async function addScheduledLessonRecord(formData: FormData) {
   const excitementNote = optionalText(formData, "excitement_note");
   const nextPlan = optionalText(formData, "next_plan");
   const remarks = optionalText(formData, "remarks");
+  const attendanceStatus = optionalText(formData, "attendance_status");
 
   const { data: enrollment, error: enrollmentError } = await supabase
     .from("enrollments")
@@ -439,6 +481,7 @@ export async function addScheduledLessonRecord(formData: FormData) {
       lesson_date: requiredText(formData, "lesson_date"),
       start_time: optionalText(formData, "start_time") ?? enrollment.start_time,
       end_time: optionalText(formData, "end_time"),
+      attendance_status: attendanceStatus || null,
       title: goal,
       content:
         structuredNote([

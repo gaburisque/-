@@ -4,6 +4,8 @@ import { ArrowLeft, CalendarDays, Clock, History, UserRound } from "lucide-react
 
 import { updateLessonRecord } from "@/app/actions";
 import { AppShell } from "@/components/app-shell";
+import { DeleteLessonRecordButton } from "@/components/delete-lesson-record-button";
+import { PrintButton } from "@/components/print-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +17,20 @@ import { normalizeCourseName, uniqueCoursesByCanonicalName } from "@/lib/courses
 import { emptyText, formatDate, formatTime, fullName } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 import type { Course, LessonRecord, LessonRecordHistory } from "@/lib/types";
+
+const ATTENDANCE_LABELS: Record<string, string> = {
+  present: "出席",
+  absent: "欠席",
+  late: "遅刻",
+  substitute: "振替"
+};
+
+const ATTENDANCE_COLORS: Record<string, string> = {
+  present: "bg-green-100 text-green-800",
+  absent: "bg-red-100 text-red-800",
+  late: "bg-yellow-100 text-yellow-800",
+  substitute: "bg-blue-100 text-blue-800"
+};
 
 function TextBlock({ title, value }: { title: string; value: string | null | undefined }) {
   return (
@@ -121,9 +137,9 @@ export default async function LessonRecordDetailPage({
   return (
     <AppShell>
       <div className="space-y-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between print:block">
           <div className="space-y-2">
-            <Button asChild variant="ghost" size="sm" className="px-0">
+            <Button asChild variant="ghost" size="sm" className="px-0 print:hidden">
               <Link href="/lesson-records">
                 <ArrowLeft className="h-4 w-4" />
                 授業記録一覧へ戻る
@@ -143,13 +159,29 @@ export default async function LessonRecordDetailPage({
                 <UserRound className="h-3.5 w-3.5" />
                 {record.students ? fullName(record.students) : "-"}
               </Badge>
+              {record.attendance_status && (
+                <span
+                  className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${ATTENDANCE_COLORS[record.attendance_status] ?? "bg-muted text-muted-foreground"}`}
+                >
+                  {ATTENDANCE_LABELS[record.attendance_status] ?? record.attendance_status}
+                </span>
+              )}
             </div>
           </div>
-          {record.students ? (
-            <Button asChild variant="outline">
-              <Link href={`/students/${record.students.student_id}`}>生徒詳細</Link>
-            </Button>
-          ) : null}
+          <div className="flex flex-wrap gap-2 print:hidden">
+            <PrintButton />
+            {record.students ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/students/${record.students.student_id}`}>生徒詳細</Link>
+              </Button>
+            ) : null}
+            <DeleteLessonRecordButton
+              lessonRecordId={record.lesson_record_id}
+              studentId={record.students?.student_id}
+              redirectTo="/lesson-records"
+              variant="outline"
+            />
+          </div>
         </div>
 
         <Card>
@@ -191,7 +223,7 @@ export default async function LessonRecordDetailPage({
           {record.memo && <TextBlock title="メモ" value={record.memo} />}
         </div>
 
-        <Card>
+        <Card className="print:hidden">
           <CardHeader>
             <CardTitle>授業記録を編集</CardTitle>
           </CardHeader>
@@ -212,6 +244,16 @@ export default async function LessonRecordDetailPage({
                       {normalizeCourseName(course.course_name)}
                     </option>
                   ))}
+                </NativeSelect>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="attendance_status">出欠</Label>
+                <NativeSelect id="attendance_status" name="attendance_status" defaultValue={record.attendance_status ?? ""}>
+                  <option value="">未設定</option>
+                  <option value="present">出席</option>
+                  <option value="absent">欠席</option>
+                  <option value="late">遅刻</option>
+                  <option value="substitute">振替</option>
                 </NativeSelect>
               </div>
               <div className="space-y-2">

@@ -237,6 +237,17 @@ export default async function NewLessonRecordPage({
                   />
                 </div>
 
+                <div className="space-y-1.5">
+                  <Label htmlFor="attendance_status">出欠</Label>
+                  <NativeSelect id="attendance_status" name="attendance_status" defaultValue="">
+                    <option value="">未設定</option>
+                    <option value="present">出席</option>
+                    <option value="absent">欠席</option>
+                    <option value="late">遅刻</option>
+                    <option value="substitute">振替</option>
+                  </NativeSelect>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="start_time">開始</Label>

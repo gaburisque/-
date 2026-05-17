@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PenLine, Search } from "lucide-react";
+import { Download, PenLine, Search } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/empty-state";
@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { normalizeCourseName } from "@/lib/courses";
+import { normalizeCourseName, uniqueCoursesByCanonicalName } from "@/lib/courses";
 import { emptyText, formatDate, formatTime, fullName, previewText } from "@/lib/format";
 import { formatGrade } from "@/lib/grades";
 import {
@@ -17,14 +17,29 @@ import {
   sortLessonRecords
 } from "@/lib/lesson-records";
 import { createClient } from "@/lib/supabase/server";
-import type { LessonRecord, Student } from "@/lib/types";
+import type { Course, LessonRecord, Student } from "@/lib/types";
 import { weekdayFromDate, weekdayOptions } from "@/lib/weekdays";
+
+const ATTENDANCE_LABELS: Record<string, string> = {
+  present: "出席",
+  absent: "欠席",
+  late: "遅刻",
+  substitute: "振替"
+};
+
+const ATTENDANCE_COLORS: Record<string, string> = {
+  present: "bg-green-100 text-green-800",
+  absent: "bg-red-100 text-red-800",
+  late: "bg-yellow-100 text-yellow-800",
+  substitute: "bg-blue-100 text-blue-800"
+};
 
 export default async function LessonRecordsPage({
   searchParams
 }: {
   searchParams: Promise<{
     student_id?: string;
+    course_id?: string;
     from?: string;
     to?: string;
     year?: string;
@@ -36,15 +51,19 @@ export default async function LessonRecordsPage({
   const supabase = await createClient();
   const sort = parseLessonRecordSort(params.sort);
 
-  const [studentsResult, yearsResult] = await Promise.all([
+  const [studentsResult, yearsResult, coursesResult] = await Promise.all([
     supabase
       .from("students")
       .select("student_id,last_name,first_name,grade")
       .order("last_name_kana", { ascending: true, nullsFirst: false }),
-    supabase.from("lesson_records").select("lesson_date").order("lesson_date", { ascending: false })
+    supabase.from("lesson_records").select("lesson_date").order("lesson_date", { ascending: false }),
+    supabase.from("courses").select("course_id,course_name").eq("status", "active").order("course_name")
   ]);
 
   const students = (studentsResult.data ?? []) as Student[];
+  const courses = uniqueCoursesByCanonicalName(
+    (coursesResult.data ?? []) as Pick<Course, "course_id" | "course_name">[]
+  );
   const years = Array.from(
     new Set(
       (yearsResult.data ?? [])
@@ -61,6 +80,10 @@ export default async function LessonRecordsPage({
 
   if (params.student_id) {
     recordsQuery = recordsQuery.eq("student_id", params.student_id);
+  }
+
+  if (params.course_id) {
+    recordsQuery = recordsQuery.eq("course_id", params.course_id);
   }
 
   if (params.year) {
@@ -96,6 +119,24 @@ export default async function LessonRecordsPage({
               {sortedRecords.length}件の記録
             </p>
           </div>
+          <Button asChild variant="outline" size="sm">
+            <a
+              href={`/api/lesson-records/export?${new URLSearchParams(
+                Object.fromEntries(
+                  Object.entries({
+                    student_id: params.student_id,
+                    year: params.year,
+                    from: params.from,
+                    to: params.to
+                  }).filter(([, v]) => Boolean(v)) as [string, string][]
+                )
+              ).toString()}`}
+              download
+            >
+              <Download className="h-4 w-4" />
+              CSV出力
+            </a>
+          </Button>
           <Button asChild>
             <Link href="/lesson-records/new">
               <PenLine className="mr-2 h-4 w-4" />
@@ -120,6 +161,14 @@ export default async function LessonRecordsPage({
                   ))}
                 </NativeSelect>
               </div>
+              <NativeSelect name="course_id" defaultValue={params.course_id ?? ""} aria-label="コース">
+                <option value="">すべてのコース</option>
+                {courses.map((course) => (
+                  <option key={course.course_id} value={course.course_id}>
+                    {normalizeCourseName(course.course_name)}
+                  </option>
+                ))}
+              </NativeSelect>
               <NativeSelect name="year" defaultValue={params.year ?? ""} aria-label="年">
                 <option value="">すべての年</option>
                 {years.map((year) => (
@@ -173,8 +222,9 @@ export default async function LessonRecordsPage({
                       <TableHead className="w-[100px]">授業日</TableHead>
                       <TableHead className="w-[64px]">時間</TableHead>
                       <TableHead className="w-[140px]">生徒</TableHead>
-                      <TableHead className="w-[110px]">コース</TableHead>
-                      <TableHead className="w-[200px]">目的 / タイトル</TableHead>
+                      <TableHead className="w-[100px]">コース</TableHead>
+                      <TableHead className="w-[72px]">出欠</TableHead>
+                      <TableHead className="w-[180px]">目的 / タイトル</TableHead>
                       <TableHead>内容</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -204,6 +254,15 @@ export default async function LessonRecordsPage({
                         </TableCell>
                         <TableCell className="py-2.5 align-top text-sm">
                           {normalizeCourseName(record.courses?.course_name) || "-"}
+                        </TableCell>
+                        <TableCell className="py-2.5 align-top">
+                          {record.attendance_status ? (
+                            <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${ATTENDANCE_COLORS[record.attendance_status] ?? "bg-muted text-muted-foreground"}`}>
+                              {ATTENDANCE_LABELS[record.attendance_status] ?? record.attendance_status}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
                         </TableCell>
                         <TableCell className="py-2.5 align-top">
                           <Link
