@@ -174,7 +174,9 @@ Scheduleページは複数回改善されています。
 - role-based RLS の草案SQL `supabase/migrations/004_role_based_rls.sql` を追加済み。
 - SupabaseでStorageポリシー再実行済み（`student-documents` の policy 作成成功）。
 - admin / staff 実機確認完了、問題なし（2026-05-17）。
-- セキュリティ第一段は完了。次は Staging 環境分離とバックアップ運用化。
+- セキュリティ第一段は完了。
+- `docs/backup-policy.md` を作成済み（バックアップ手順・Staging構築・退職者対応を記載）。
+- Supabase Staging プロジェクトはユーザーが作成中。作成後に Vercel Preview 環境変数を Staging に向ける。
 
 高優先度の懸念:
 
