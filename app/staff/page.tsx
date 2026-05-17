@@ -7,10 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { isCurrentUserAdmin } from "@/lib/authz";
 import { createClient } from "@/lib/supabase/server";
 import type { Staff } from "@/lib/types";
+import { redirect } from "next/navigation";
 
 export default async function StaffPage() {
+  const isAdmin = await isCurrentUserAdmin();
+  if (!isAdmin) {
+    redirect("/dashboard");
+  }
+
   const supabase = await createClient();
   const { data } = await supabase.from("staff").select("*").order("name");
   const staff = (data ?? []) as Staff[];

@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import Link from "next/link";
 import { signIn } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,11 +46,8 @@ function LoginForm({
           <Button type="submit" className="w-full">
             ログイン
           </Button>
-          <div className="text-center text-sm text-muted-foreground">
-            アカウントがない場合は{" "}
-            <Link href="/signup" className="font-medium text-primary hover:underline">
-              登録
-            </Link>
+          <div className="text-center text-xs text-muted-foreground">
+            アカウント作成は管理者が行います。
           </div>
         </form>
       </CardContent>

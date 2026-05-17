@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 
+import { isCurrentUserAdmin } from "@/lib/authz";
 import { normalizeGrade } from "@/lib/grades";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET() {
+  const isAdmin = await isCurrentUserAdmin();
+  if (!isAdmin) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const supabase = await createClient();
 
   const { data: students, error } = await supabase

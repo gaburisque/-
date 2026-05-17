@@ -25,6 +25,7 @@ type StudentOption = { student_id: string; last_name: string; first_name: string
 
 export default function DocumentsPage() {
   const supabase = createClient();
+  const [isAdmin, setIsAdmin] = useState(false);
   const [students, setStudents] = useState<StudentOption[]>([]);
   const [documents, setDocuments] = useState<StudentDocument[]>([]);
   const [filterStudentId, setFilterStudentId] = useState("");
@@ -43,6 +44,43 @@ export default function DocumentsPage() {
     setDocuments((data ?? []) as unknown as StudentDocument[]);
     setLoading(false);
   }, [filterStudentId]);
+
+  useEffect(() => {
+    async function detectAdmin() {
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setIsAdmin(false);
+        return;
+      }
+
+      const byAuth = await supabase
+        .from("staff")
+        .select("role")
+        .eq("auth_user_id", user.id)
+        .maybeSingle();
+
+      if (byAuth.data) {
+        setIsAdmin((byAuth.data as { role?: string }).role === "admin");
+        return;
+      }
+
+      if (user.email) {
+        const byEmail = await supabase
+          .from("staff")
+          .select("role")
+          .eq("email", user.email)
+          .maybeSingle();
+        setIsAdmin((byEmail.data as { role?: string } | null)?.role === "admin");
+        return;
+      }
+
+      setIsAdmin(false);
+    }
+
+    detectAdmin();
+  }, [supabase]);
 
   useEffect(() => {
     supabase
@@ -146,14 +184,16 @@ export default function DocumentsPage() {
                         <Button size="sm" variant="outline" onClick={() => handleDownload(doc)}>
                           開く
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => handleDelete(doc)}
-                        >
-                          削除
-                        </Button>
+                        {isAdmin ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => handleDelete(doc)}
+                          >
+                            削除
+                          </Button>
+                        ) : null}
                       </div>
                     </div>
                   );

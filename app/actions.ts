@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { isCurrentUserAdmin } from "@/lib/authz";
 import { normalizeGrade } from "@/lib/grades";
 import { createClient } from "@/lib/supabase/server";
 
@@ -43,23 +44,9 @@ async function ensureCurrentStaffId(supabase: Awaited<ReturnType<typeof createCl
     return existingStaff.staff_id;
   }
 
-  const name =
-    typeof user.user_metadata?.name === "string" && user.user_metadata.name.trim()
-      ? user.user_metadata.name.trim()
-      : user.email ?? "職員";
-
-  const { data: createdStaff } = await supabase
-    .from("staff")
-    .insert({
-      auth_user_id: user.id,
-      name,
-      email: user.email,
-      role: "staff"
-    })
-    .select("staff_id")
-    .single();
-
-  return createdStaff?.staff_id ?? null;
+  // Security hardening: staff rows should be provisioned by admin.
+  // If the current auth user has no linked staff row yet, caller falls back to null.
+  return null;
 }
 
 export async function signIn(formData: FormData) {
@@ -88,56 +75,10 @@ export async function signIn(formData: FormData) {
 }
 
 export async function signUp(formData: FormData) {
-  const supabase = await createClient();
-  const name = requiredText(formData, "name");
-  const email = requiredText(formData, "email");
-  const password = requiredText(formData, "password");
-  const confirmPassword = requiredText(formData, "confirm_password");
-
-  if (password !== confirmPassword) {
-    redirect(`/signup?error=${encodeURIComponent("パスワードが一致しません")}`);
-  }
-
-  const supabaseConnectionError =
-    "Supabaseに接続できません。Supabase稼働状況、環境変数、ネットワーク設定を確認してください。";
-
-  const { data, error } = await supabase.auth
-    .signUp({
-      email,
-      password,
-      options: {
-        data: {
-          name
-        }
-      }
-    })
-    .catch(() => ({
-      data: { user: null, session: null },
-      error: new Error(supabaseConnectionError)
-    }));
-
-  if (error) {
-    const message = error.message.includes("fetch failed")
-      ? supabaseConnectionError
-      : error.message;
-    redirect(`/signup?error=${encodeURIComponent(message)}`);
-  }
-
-  if (data.user) {
-    await supabase.from("staff").insert({
-      auth_user_id: data.user.id,
-      name,
-      email,
-      role: "staff"
-    });
-  }
-
-  if (data.session) {
-    redirect("/dashboard");
-  }
-
   redirect(
-    `/login?message=${encodeURIComponent("登録しました。確認メールが届いている場合は、メール内のリンクを開いてからログインしてください。")}`
+    `/login?error=${encodeURIComponent(
+      "新規登録は停止中です。管理者にアカウント作成を依頼してください。"
+    )}`
   );
 }
 
@@ -284,6 +225,10 @@ export async function updateEnrollmentSchedule(formData: FormData) {
 }
 
 export async function createStaffProfile(formData: FormData) {
+  if (!(await isCurrentUserAdmin())) {
+    throw new Error("権限がありません。");
+  }
+
   const supabase = await createClient();
 
   const { error } = await supabase.from("staff").insert({
@@ -298,6 +243,10 @@ export async function createStaffProfile(formData: FormData) {
 }
 
 export async function updateStaffProfile(formData: FormData) {
+  if (!(await isCurrentUserAdmin())) {
+    throw new Error("権限がありません。");
+  }
+
   const supabase = await createClient();
   const staffId = requiredText(formData, "staff_id");
 
@@ -317,6 +266,10 @@ export async function updateStaffProfile(formData: FormData) {
 }
 
 export async function deleteUnlinkedStaffProfiles() {
+  if (!(await isCurrentUserAdmin())) {
+    throw new Error("権限がありません。");
+  }
+
   const supabase = await createClient();
 
   const { error } = await supabase
