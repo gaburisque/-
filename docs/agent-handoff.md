@@ -176,7 +176,8 @@ Scheduleページは複数回改善されています。
 - admin / staff 実機確認完了、問題なし（2026-05-17）。
 - セキュリティ第一段は完了。
 - `docs/backup-policy.md` を作成済み（バックアップ手順・Staging構築・退職者対応を記載）。
-- Supabase Staging プロジェクトはユーザーが作成中。作成後に Vercel Preview 環境変数を Staging に向ける。
+- Supabase Staging プロジェクトを作成し、Vercel Preview 環境変数を Staging に向ける方針。
+- `supabase/seed.sql` は Staging 動作確認用に、正式4コース（Scratch / Roblox / ITオンライン部 / イラスト）と約100人の仮生徒・保護者・受講データを投入する内容に更新済み。本番には投入しない。
 
 高優先度の懸念:
 
