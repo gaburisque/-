@@ -6,7 +6,6 @@ import {
   addEmergencyContact,
   addEnrollment,
   addGuardian,
-  addLessonRecord,
   updateEnrollmentSchedule,
   updateStudent
 } from "@/app/actions";
@@ -128,10 +127,10 @@ export default async function StudentDetailPage({
             </p>
           </div>
           <Button asChild>
-            <a href="#new-lesson-record">
+            <Link href={`/lesson-records/new?student_id=${student.student_id}`}>
               <ClipboardPlus className="h-4 w-4" />
-              新規授業記録
-            </a>
+              授業記録を入力
+            </Link>
           </Button>
         </div>
 
@@ -547,72 +546,6 @@ export default async function StudentDetailPage({
           </CardContent>
         </Card>
 
-        <Card id="new-lesson-record">
-          <CardHeader>
-            <CardTitle>授業記録を追加</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form action={addLessonRecord} className="grid gap-4 md:grid-cols-2">
-              <input type="hidden" name="student_id" value={student.student_id} />
-              <div className="space-y-2">
-                <Label htmlFor="lesson_date">授業日</Label>
-                <Input id="lesson_date" name="lesson_date" type="date" required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="course_id">コース</Label>
-                <NativeSelect id="course_id" name="course_id">
-                  <option value="">未選択</option>
-                  {courses.map((course) => (
-                    <option key={course.course_id} value={course.course_id}>
-                      {course.course_name}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="start_time">開始</Label>
-                <NativeSelect id="start_time" name="start_time">
-                  <option value="">未選択</option>
-                  {lessonStartTimeOptions.map((time) => (
-                    <option key={time} value={time}>
-                      {time}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="end_time">終了</Label>
-                <NativeSelect id="end_time" name="end_time">
-                  <option value="">未選択</option>
-                  {lessonEndTimeOptions.map((time) => (
-                    <option key={time} value={time}>
-                      {time}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="title">タイトル</Label>
-                <Input id="title" name="title" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="content">内容</Label>
-                <Textarea id="content" name="content" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="homework">宿題</Label>
-                <Textarea id="homework" name="homework" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="memo">メモ</Label>
-                <Textarea id="memo" name="memo" />
-              </div>
-              <div className="md:col-span-2">
-                <Button type="submit">授業記録を追加</Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
       </div>
     </AppShell>
   );

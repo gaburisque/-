@@ -18,12 +18,67 @@ import type { Course, LessonRecord, LessonRecordHistory } from "@/lib/types";
 
 function TextBlock({ title, value }: { title: string; value: string | null | undefined }) {
   return (
-    <section className="space-y-2">
-      <h2 className="text-sm font-semibold text-muted-foreground">{title}</h2>
-      <div className="whitespace-pre-wrap rounded-md border bg-white p-4 text-sm leading-7">
+    <section className="space-y-1.5">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h2>
+      <div className="whitespace-pre-wrap rounded-md border bg-white p-4 text-sm leading-7 min-h-[56px]">
         {emptyText(value)}
       </div>
     </section>
+  );
+}
+
+/** 「セクション名：内容」形式で構造化されたテキストをパースして表示 */
+function StructuredContent({ value }: { value: string | null | undefined }) {
+  if (!value) {
+    return (
+      <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
+        記録なし
+      </div>
+    );
+  }
+
+  const SECTION_LABELS = [
+    "今日の目的",
+    "タイピング使用ツール",
+    "タイピングの様子",
+    "レッスン使用ツール",
+    "レッスンの様子",
+    "今日のワクワクの様子"
+  ];
+
+  const labelsPattern = SECTION_LABELS.map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const regex = new RegExp(`(${labelsPattern})：`, "g");
+  const hasStructure = regex.test(value);
+
+  if (!hasStructure) {
+    return (
+      <div className="whitespace-pre-wrap rounded-md border bg-white p-4 text-sm leading-7">
+        {value}
+      </div>
+    );
+  }
+
+  const splitRegex = new RegExp(`(?=(?:${labelsPattern})：)`);
+  const parts = value.split(splitRegex).filter(Boolean);
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {parts.map((part, i) => {
+        const colonIdx = part.indexOf("：");
+        if (colonIdx === -1) return null;
+        const label = part.slice(0, colonIdx).trim();
+        const content = part.slice(colonIdx + 1).trim();
+        if (!content) return null;
+        return (
+          <section key={i} className="space-y-1">
+            <h3 className="text-xs font-semibold text-muted-foreground">{label}</h3>
+            <div className="whitespace-pre-wrap rounded-md border bg-white p-3 text-sm leading-6">
+              {content}
+            </div>
+          </section>
+        );
+      })}
+    </div>
   );
 }
 
@@ -126,9 +181,14 @@ export default async function LessonRecordDetailPage({
         </Card>
 
         <div className="space-y-5">
-          <TextBlock title="授業内容" value={record.content} />
+          <section className="space-y-1.5">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              授業内容
+            </h2>
+            <StructuredContent value={record.content} />
+          </section>
           <TextBlock title="宿題・次回予定" value={record.homework} />
-          <TextBlock title="メモ" value={record.memo} />
+          {record.memo && <TextBlock title="メモ" value={record.memo} />}
         </div>
 
         <Card>

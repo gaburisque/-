@@ -1,17 +1,14 @@
 import Link from "next/link";
-import { ClipboardPlus, Search } from "lucide-react";
+import { PenLine, Search } from "lucide-react";
 
-import { addLessonRecord } from "@/app/actions";
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
-import { normalizeCourseName, uniqueCoursesByCanonicalName } from "@/lib/courses";
+import { normalizeCourseName } from "@/lib/courses";
 import { emptyText, formatDate, formatTime, fullName, previewText } from "@/lib/format";
 import { formatGrade } from "@/lib/grades";
 import {
@@ -19,9 +16,8 @@ import {
   parseLessonRecordSort,
   sortLessonRecords
 } from "@/lib/lesson-records";
-import { lessonEndTimeOptions, lessonStartTimeOptions } from "@/lib/lesson-times";
 import { createClient } from "@/lib/supabase/server";
-import type { Course, LessonRecord, Student } from "@/lib/types";
+import type { LessonRecord, Student } from "@/lib/types";
 import { weekdayFromDate, weekdayOptions } from "@/lib/weekdays";
 
 export default async function LessonRecordsPage({
@@ -40,17 +36,15 @@ export default async function LessonRecordsPage({
   const supabase = await createClient();
   const sort = parseLessonRecordSort(params.sort);
 
-  const [studentsResult, coursesResult, yearsResult] = await Promise.all([
+  const [studentsResult, yearsResult] = await Promise.all([
     supabase
       .from("students")
       .select("student_id,last_name,first_name,grade")
       .order("last_name_kana", { ascending: true, nullsFirst: false }),
-    supabase.from("courses").select("*").eq("status", "active").order("course_name"),
     supabase.from("lesson_records").select("lesson_date").order("lesson_date", { ascending: false })
   ]);
 
   const students = (studentsResult.data ?? []) as Student[];
-  const courses = uniqueCoursesByCanonicalName((coursesResult.data ?? []) as Course[]);
   const years = Array.from(
     new Set(
       (yearsResult.data ?? [])
@@ -93,24 +87,28 @@ export default async function LessonRecordsPage({
 
   return (
     <AppShell>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-normal">授業記録</h1>
-          <p className="mt-1 text-sm text-muted-foreground">授業記録の閲覧と登録を行います。</p>
-        </div>
-        <div>
+      <div className="space-y-5">
+        {/* ヘッダー */}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1">
+            <h1 className="text-2xl font-semibold tracking-tight">授業記録</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {sortedRecords.length}件の記録
+            </p>
+          </div>
           <Button asChild>
-            <Link href="/lesson-records/new">曜日から記録入力</Link>
+            <Link href="/lesson-records/new">
+              <PenLine className="mr-2 h-4 w-4" />
+              記録を入力
+            </Link>
           </Button>
         </div>
 
+        {/* フィルター */}
         <Card>
-          <CardHeader>
-            <CardTitle>フィルター</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="relative sm:col-span-2 lg:col-span-3">
+          <CardContent className="pt-5">
+            <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="relative sm:col-span-2 lg:col-span-4">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <NativeSelect name="student_id" defaultValue={params.student_id ?? ""} className="pl-9">
                   <option value="">すべての生徒</option>
@@ -140,20 +138,15 @@ export default async function LessonRecordsPage({
               </NativeSelect>
               <Input name="from" type="date" defaultValue={params.from ?? ""} aria-label="開始日" />
               <Input name="to" type="date" defaultValue={params.to ?? ""} aria-label="終了日" />
-              <div className="flex flex-col gap-3 sm:col-span-2 lg:col-span-3 sm:flex-row sm:items-end">
-                <NativeSelect
-                  name="sort"
-                  defaultValue={sort}
-                  aria-label="並び替え"
-                  className="min-w-0 flex-1"
-                >
+              <div className="flex gap-2 sm:col-span-2 lg:col-span-4">
+                <NativeSelect name="sort" defaultValue={sort} aria-label="並び替え" className="flex-1">
                   {lessonRecordSortOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
                   ))}
                 </NativeSelect>
-                <Button type="submit" className="shrink-0 sm:w-auto">
+                <Button type="submit" variant="outline" className="shrink-0">
                   絞り込み
                 </Button>
               </div>
@@ -161,163 +154,81 @@ export default async function LessonRecordsPage({
           </CardContent>
         </Card>
 
+        {/* 一覧テーブル */}
         <Card>
-          <CardHeader>
-            <CardTitle>授業記録一覧</CardTitle>
-            <CardDescription>
-              {sortedRecords.length}件 / {lessonRecordSortOptions.find((option) => option.value === sort)?.label}
-            </CardDescription>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">授業記録一覧</CardTitle>
+              <CardDescription>
+                {sortedRecords.length}件 · {lessonRecordSortOptions.find((o) => o.value === sort)?.label}
+              </CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
             {sortedRecords.length > 0 ? (
-              <Table className="min-w-[980px] table-fixed">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[112px]">授業日</TableHead>
-                    <TableHead className="w-[72px]">時間</TableHead>
-                    <TableHead className="w-[150px]">生徒</TableHead>
-                    <TableHead className="w-[130px]">コース</TableHead>
-                    <TableHead className="w-[220px]">タイトル</TableHead>
-                    <TableHead>内容</TableHead>
-                    <TableHead className="w-[220px]">宿題</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedRecords.map((record) => (
-                    <TableRow key={record.lesson_record_id} className="cursor-pointer">
-                      <TableCell className="whitespace-nowrap py-2 align-top">{formatDate(record.lesson_date)}</TableCell>
-                      <TableCell className="whitespace-nowrap py-2 align-top">{formatTime(record.start_time)}</TableCell>
-                      <TableCell className="py-2 align-top">
-                        {record.students ? (
-                          <Link
-                            href={`/students/${record.students.student_id}`}
-                            className="font-medium text-primary hover:underline"
-                          >
-                            {fullName(record.students)}
-                          </Link>
-                        ) : (
-                          "-"
-                        )}
-                      </TableCell>
-                      <TableCell className="py-2 align-top">
-                        {normalizeCourseName(record.courses?.course_name) || "-"}
-                      </TableCell>
-                      <TableCell className="py-2 align-top">
-                        <Link
-                          href={`/lesson-records/${record.lesson_record_id}`}
-                          className="line-clamp-2 font-medium leading-5 text-primary hover:underline"
-                          title={emptyText(record.title)}
-                        >
-                          {emptyText(record.title)}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="py-2 align-top">
-                        <Link
-                          href={`/lesson-records/${record.lesson_record_id}`}
-                          className="line-clamp-2 leading-5 hover:text-primary"
-                          title={emptyText(record.content)}
-                        >
-                          {previewText(record.content, 120)}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="py-2 align-top">
-                        <Link
-                          href={`/lesson-records/${record.lesson_record_id}`}
-                          className="line-clamp-2 leading-5 hover:text-primary"
-                          title={emptyText(record.homework)}
-                        >
-                          {previewText(record.homework, 80)}
-                        </Link>
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table className="min-w-[860px] table-fixed">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[100px]">授業日</TableHead>
+                      <TableHead className="w-[64px]">時間</TableHead>
+                      <TableHead className="w-[140px]">生徒</TableHead>
+                      <TableHead className="w-[110px]">コース</TableHead>
+                      <TableHead className="w-[200px]">目的 / タイトル</TableHead>
+                      <TableHead>内容</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedRecords.map((record) => (
+                      <TableRow key={record.lesson_record_id} className="cursor-pointer hover:bg-muted/40">
+                        <TableCell className="whitespace-nowrap py-2.5 align-top text-sm">
+                          {formatDate(record.lesson_date)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap py-2.5 align-top text-sm font-mono text-muted-foreground">
+                          {formatTime(record.start_time)}
+                        </TableCell>
+                        <TableCell className="py-2.5 align-top">
+                          {record.students ? (
+                            <Link
+                              href={`/students/${record.students.student_id}`}
+                              className="font-medium text-primary hover:underline"
+                            >
+                              {fullName(record.students)}
+                            </Link>
+                          ) : "-"}
+                          {record.students?.grade && (
+                            <div className="text-xs text-muted-foreground">
+                              {formatGrade(record.students.grade)}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-2.5 align-top text-sm">
+                          {normalizeCourseName(record.courses?.course_name) || "-"}
+                        </TableCell>
+                        <TableCell className="py-2.5 align-top">
+                          <Link
+                            href={`/lesson-records/${record.lesson_record_id}`}
+                            className="line-clamp-2 text-sm font-medium text-primary hover:underline"
+                          >
+                            {emptyText(record.title)}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="py-2.5 align-top">
+                          <Link
+                            href={`/lesson-records/${record.lesson_record_id}`}
+                            className="line-clamp-2 text-sm leading-5 text-muted-foreground hover:text-foreground"
+                          >
+                            {previewText(record.content, 100)}
+                          </Link>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             ) : (
-              <EmptyState>授業記録がありません。</EmptyState>
+              <EmptyState>条件に一致する授業記録がありません。</EmptyState>
             )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ClipboardPlus className="h-5 w-5" />
-              授業記録フォーム
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form action={addLessonRecord} className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="student_id">生徒</Label>
-                <NativeSelect id="student_id" name="student_id" defaultValue={params.student_id ?? ""} required>
-                  <option value="">生徒を選択</option>
-                  {students.map((student) => (
-                    <option key={student.student_id} value={student.student_id}>
-                      {fullName(student)}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="course_id">コース</Label>
-                <NativeSelect id="course_id" name="course_id">
-                  <option value="">未選択</option>
-                  {courses.map((course) => (
-                    <option key={course.course_id} value={course.course_id}>
-                      {normalizeCourseName(course.course_name)}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="lesson_date">授業日</Label>
-                <Input id="lesson_date" name="lesson_date" type="date" required />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="start_time">開始</Label>
-                  <NativeSelect id="start_time" name="start_time">
-                    <option value="">未選択</option>
-                    {lessonStartTimeOptions.map((time) => (
-                      <option key={time} value={time}>
-                        {time}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="end_time">終了</Label>
-                  <NativeSelect id="end_time" name="end_time">
-                    <option value="">未選択</option>
-                    {lessonEndTimeOptions.map((time) => (
-                      <option key={time} value={time}>
-                        {time}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </div>
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="title">タイトル</Label>
-                <Input id="title" name="title" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="content">内容</Label>
-                <Textarea id="content" name="content" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="homework">宿題</Label>
-                <Textarea id="homework" name="homework" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="memo">メモ</Label>
-                <Textarea id="memo" name="memo" />
-              </div>
-              <div className="md:col-span-2">
-                <Button type="submit">登録</Button>
-              </div>
-            </form>
           </CardContent>
         </Card>
       </div>
