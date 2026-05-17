@@ -4,6 +4,7 @@ import { Search, UserPlus } from "lucide-react";
 import { createStudent } from "@/app/actions";
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/empty-state";
+import { GradePromotionButton } from "@/components/grade-promotion-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +14,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { fullName } from "@/lib/format";
-import { formatGrade, gradeOptions } from "@/lib/grades";
+import { formatGradeOrAge, gradeOptions, nextGrade, normalizeGrade } from "@/lib/grades";
 import { one } from "@/lib/relations";
 import { createClient } from "@/lib/supabase/server";
 import type { School, Student } from "@/lib/types";
@@ -35,7 +36,7 @@ export default async function StudentsPage({
 
   let query = supabase
     .from("students")
-    .select("student_id,last_name,first_name,last_name_kana,first_name_kana,grade,status,phone,email,updated_at,schools(school_name)")
+    .select("student_id,last_name,first_name,last_name_kana,first_name_kana,grade,birth_date,status,phone,email,updated_at,schools(school_name)")
     .order("last_name_kana", { ascending: true, nullsFirst: false });
 
   if (params.q) {
@@ -55,12 +56,25 @@ export default async function StudentsPage({
 
   const { data: students } = await query;
 
+  // 進級プレビュー（active生徒で grade が認識できる人）
+  const activeStudents = (students ?? []) as unknown as (Student & { birth_date?: string | null })[];
+  const promotingStudents = activeStudents.filter(
+    (s) => s.status === "active" && normalizeGrade(s.grade) !== null
+  );
+  const graduatingCount = promotingStudents.filter((s) => nextGrade(s.grade) === null).length;
+
   return (
     <AppShell>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-normal">生徒</h1>
-          <p className="mt-1 text-sm text-muted-foreground">生徒一覧、検索、登録を行います。</p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-normal">生徒</h1>
+            <p className="mt-1 text-sm text-muted-foreground">生徒一覧、検索、登録を行います。</p>
+          </div>
+          <GradePromotionButton
+            promotingCount={promotingStudents.length}
+            graduatingCount={graduatingCount}
+          />
         </div>
 
         <Card>
@@ -121,7 +135,7 @@ export default async function StudentsPage({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(students as unknown as Student[]).map((student) => (
+                  {(students as unknown as (Student & { birth_date?: string | null })[]).map((student) => (
                     <TableRow key={student.student_id}>
                       <TableCell>
                         <Link
@@ -134,7 +148,7 @@ export default async function StudentsPage({
                           {[student.last_name_kana, student.first_name_kana].filter(Boolean).join(" ") || "-"}
                         </div>
                       </TableCell>
-                      <TableCell>{formatGrade(student.grade)}</TableCell>
+                      <TableCell>{formatGradeOrAge(student.grade, student.birth_date)}</TableCell>
                       <TableCell>{one(student.schools)?.school_name ?? "-"}</TableCell>
                       <TableCell>
                         <div>{student.phone ?? "-"}</div>

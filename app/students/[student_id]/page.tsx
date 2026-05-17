@@ -9,6 +9,7 @@ import {
   updateEnrollmentSchedule,
   updateStudent
 } from "@/app/actions";
+import { DeleteEnrollmentButton } from "@/components/delete-enrollment-button";
 import { DeleteLessonRecordButton } from "@/components/delete-lesson-record-button";
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/empty-state";
@@ -21,7 +22,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { emptyText, formatDate, formatTime, fullName, previewText } from "@/lib/format";
-import { formatGrade, gradeOptions, normalizeGrade } from "@/lib/grades";
+import { formatGrade, formatGradeOrAge, gradeOptions, normalizeGrade } from "@/lib/grades";
 import { normalizeCourseName, uniqueCoursesByCanonicalName } from "@/lib/courses";
 import {
   lessonRecordSortOptions,
@@ -113,6 +114,16 @@ export default async function StudentDetailPage({
   );
   const courses = uniqueCoursesByCanonicalName((coursesResult.data ?? []) as Course[]);
 
+  // コース別の直近授業日（既取得データから計算）
+  const lastLessonByCourse = lessonRecords.reduce<Record<string, string>>((acc, r) => {
+    if (r.course_id && r.lesson_date) {
+      if (!acc[r.course_id] || r.lesson_date > acc[r.course_id]) {
+        acc[r.course_id] = r.lesson_date;
+      }
+    }
+    return acc;
+  }, {});
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -123,7 +134,7 @@ export default async function StudentDetailPage({
             </Link>
             <h1 className="mt-2 text-2xl font-semibold tracking-normal">{fullName(student)}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {formatGrade(student.grade) === "-" ? "学年未設定" : formatGrade(student.grade)} /{" "}
+              {formatGradeOrAge(student.grade, student.birth_date) === "-" ? "学年未設定" : formatGradeOrAge(student.grade, student.birth_date)} /{" "}
               {one(student.schools)?.school_name ?? "学校未設定"}
             </p>
           </div>
@@ -332,133 +343,137 @@ export default async function StudentDetailPage({
         <Card>
           <CardHeader>
             <CardTitle>受講コース</CardTitle>
+            <CardDescription className="text-xs">
+              曜日・時間を変更して保存すると、次回の授業記録入力から新しいグループに移動します。
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3">
             {enrollments.length > 0 ? (
-              <Table>
-                <TableHeader>
-                    <TableRow>
-                      <TableHead>コース</TableHead>
-                      <TableHead>曜日</TableHead>
-                      <TableHead>時間</TableHead>
-                      <TableHead>開始日</TableHead>
-                      <TableHead>終了日</TableHead>
-                      <TableHead>状態</TableHead>
-                      <TableHead>操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {enrollments.map((enrollment) => (
-                    <TableRow key={enrollment.enrollment_id}>
-                      <TableCell>
-                        {normalizeCourseName(one(enrollment.courses)?.course_name) || "-"}
-                      </TableCell>
-                      <TableCell>
-                        <form id={`enrollment-${enrollment.enrollment_id}`} action={updateEnrollmentSchedule}>
-                          <input type="hidden" name="enrollment_id" value={enrollment.enrollment_id} />
-                          <input type="hidden" name="student_id" value={student.student_id} />
-                          <NativeSelect name="weekday" defaultValue={enrollment.weekday ?? ""} className="h-9 min-w-[88px]">
-                            <option value="">未設定</option>
-                            {weekdayOptions.map((weekday) => (
-                              <option key={weekday} value={weekday}>
-                                {weekday}
-                              </option>
-                            ))}
-                          </NativeSelect>
-                        </form>
-                      </TableCell>
-                      <TableCell>
-                        <NativeSelect
-                          form={`enrollment-${enrollment.enrollment_id}`}
-                          name="enrollment_start_time"
-                          defaultValue={formatTime(enrollment.start_time) === "-" ? "" : formatTime(enrollment.start_time)}
-                          className="h-9 min-w-[100px]"
-                        >
-                          <option value="">未設定</option>
-                          {lessonStartTimeOptions.map((time) => (
-                            <option key={time} value={time}>
-                              {time}
-                            </option>
+              <div className="space-y-3">
+                {enrollments.map((enrollment) => {
+                  const courseName = normalizeCourseName(one(enrollment.courses)?.course_name) || "-";
+                  const lastLesson = enrollment.course_id ? lastLessonByCourse[enrollment.course_id] : null;
+                  const currentTime = formatTime(enrollment.start_time);
+                  const statusLabel =
+                    enrollment.status === "active" ? "受講中" :
+                    enrollment.status === "paused" ? "休会中" : "修了";
+                  const statusColor =
+                    enrollment.status === "active" ? "bg-green-100 text-green-800" :
+                    enrollment.status === "paused" ? "bg-yellow-100 text-yellow-800" :
+                    "bg-muted text-muted-foreground";
+                  const dotColor =
+                    courseName === "Scratch" ? "bg-blue-400" :
+                    courseName === "Roblox" ? "bg-green-500" :
+                    courseName === "ITオンライン部" ? "bg-purple-500" :
+                    courseName === "イラスト" ? "bg-orange-400" : "bg-gray-300";
+
+                  return (
+                    <div key={enrollment.enrollment_id} className="rounded-lg border p-4 space-y-3">
+                      {/* コース名 + ステータス + 削除 */}
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotColor}`} />
+                          <span className="font-medium">{courseName}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`rounded px-2 py-0.5 text-xs font-medium ${statusColor}`}>
+                            {statusLabel}
+                          </span>
+                          <DeleteEnrollmentButton
+                            enrollmentId={enrollment.enrollment_id}
+                            studentId={student.student_id}
+                            courseName={courseName}
+                          />
+                        </div>
+                      </div>
+
+                      {/* 編集フォーム */}
+                      <form action={updateEnrollmentSchedule} className="grid gap-2 sm:grid-cols-[110px_110px_120px_auto]">
+                        <input type="hidden" name="enrollment_id" value={enrollment.enrollment_id} />
+                        <input type="hidden" name="student_id" value={student.student_id} />
+                        <input type="hidden" name="schedule_label" value={enrollment.schedule_label ?? ""} />
+                        <input type="hidden" name="frequency" value={enrollment.frequency ?? ""} />
+
+                        <NativeSelect name="weekday" defaultValue={enrollment.weekday ?? ""} aria-label="曜日">
+                          <option value="">曜日未設定</option>
+                          {weekdayOptions.map((weekday) => (
+                            <option key={weekday} value={weekday}>{weekday}曜日</option>
                           ))}
                         </NativeSelect>
-                      </TableCell>
-                      <TableCell>{formatDate(enrollment.start_date)}</TableCell>
-                      <TableCell>{formatDate(enrollment.end_date)}</TableCell>
-                      <TableCell>
+
                         <NativeSelect
-                          form={`enrollment-${enrollment.enrollment_id}`}
-                          name="enrollment_status"
-                          defaultValue={enrollment.status}
-                          className="h-9 min-w-[120px]"
+                          name="enrollment_start_time"
+                          defaultValue={currentTime === "-" ? "" : currentTime}
+                          aria-label="開始時間"
                         >
-                          <option value="active">active</option>
-                          <option value="paused">paused</option>
-                          <option value="completed">completed</option>
+                          <option value="">時間未設定</option>
+                          {lessonStartTimeOptions.map((time) => (
+                            <option key={time} value={time}>{time}</option>
+                          ))}
                         </NativeSelect>
-                        <input
-                          form={`enrollment-${enrollment.enrollment_id}`}
-                          type="hidden"
-                          name="schedule_label"
-                          value={enrollment.schedule_label ?? ""}
-                        />
-                        <input
-                          form={`enrollment-${enrollment.enrollment_id}`}
-                          type="hidden"
-                          name="frequency"
-                          value={enrollment.frequency ?? ""}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Button form={`enrollment-${enrollment.enrollment_id}`} type="submit" size="sm" variant="secondary">
+
+                        <NativeSelect name="enrollment_status" defaultValue={enrollment.status} aria-label="状態">
+                          <option value="active">受講中</option>
+                          <option value="paused">休会中</option>
+                          <option value="completed">修了</option>
+                        </NativeSelect>
+
+                        <Button type="submit" size="sm" variant="secondary" className="w-full sm:w-auto">
                           保存
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      </form>
+
+                      {/* 直近の授業日 */}
+                      {lastLesson && (
+                        <p className="text-xs text-muted-foreground">
+                          直近の授業: {formatDate(lastLesson)}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
               <EmptyState>受講コースがありません。</EmptyState>
             )}
-            <form action={addEnrollment} className="grid gap-3 md:grid-cols-[1fr_120px_140px_160px_160px_auto]">
-              <input type="hidden" name="student_id" value={student.student_id} />
-              <NativeSelect name="course_id" required>
-                <option value="">コースを選択</option>
-                {courses.map((course) => (
-                  <option key={course.course_id} value={course.course_id}>
-                    {normalizeCourseName(course.course_name)}
-                  </option>
-                ))}
-              </NativeSelect>
-              <NativeSelect name="weekday" defaultValue="">
-                <option value="">曜日</option>
-                {weekdayOptions.map((weekday) => (
-                  <option key={weekday} value={weekday}>
-                    {weekday}
-                  </option>
-                ))}
-              </NativeSelect>
-              <NativeSelect name="enrollment_start_time" defaultValue="">
-                <option value="">時間</option>
-                {lessonStartTimeOptions.map((time) => (
-                  <option key={time} value={time}>
-                    {time}
-                  </option>
-                ))}
-              </NativeSelect>
-              <Input name="start_date" type="date" aria-label="開始日" />
-              <Input name="end_date" type="date" aria-label="終了日" />
-              <NativeSelect name="enrollment_status" defaultValue="active">
-                <option value="active">active</option>
-                <option value="paused">paused</option>
-                <option value="completed">completed</option>
-              </NativeSelect>
-              <Button type="submit" variant="secondary">
-                追加
-              </Button>
-              <input type="hidden" name="schedule_label" value="" />
-              <input type="hidden" name="frequency" value="" />
-            </form>
+
+            {/* 新規追加フォーム */}
+            <div className="rounded-lg border border-dashed p-4">
+              <p className="mb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">コースを追加</p>
+              <form action={addEnrollment} className="grid gap-2 sm:grid-cols-[1fr_110px_110px_auto]">
+                <input type="hidden" name="student_id" value={student.student_id} />
+                <input type="hidden" name="enrollment_status" value="active" />
+                <input type="hidden" name="schedule_label" value="" />
+                <input type="hidden" name="frequency" value="" />
+
+                <NativeSelect name="course_id" required aria-label="コース">
+                  <option value="">コースを選択</option>
+                  {courses.map((course) => (
+                    <option key={course.course_id} value={course.course_id}>
+                      {normalizeCourseName(course.course_name)}
+                    </option>
+                  ))}
+                </NativeSelect>
+
+                <NativeSelect name="weekday" defaultValue="" aria-label="曜日">
+                  <option value="">曜日</option>
+                  {weekdayOptions.map((weekday) => (
+                    <option key={weekday} value={weekday}>{weekday}曜日</option>
+                  ))}
+                </NativeSelect>
+
+                <NativeSelect name="enrollment_start_time" defaultValue="" aria-label="時間">
+                  <option value="">時間</option>
+                  {lessonStartTimeOptions.map((time) => (
+                    <option key={time} value={time}>{time}</option>
+                  ))}
+                </NativeSelect>
+
+                <Button type="submit" variant="secondary" size="sm" className="w-full sm:w-auto">
+                  追加
+                </Button>
+              </form>
+            </div>
           </CardContent>
         </Card>
 

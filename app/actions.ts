@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { isCurrentUserAdmin } from "@/lib/authz";
-import { normalizeGrade } from "@/lib/grades";
+import { nextGrade, normalizeGrade } from "@/lib/grades";
 import { createClient } from "@/lib/supabase/server";
 
 function optionalText(formData: FormData, key: string) {
@@ -505,4 +505,46 @@ export async function addScheduledLessonRecord(formData: FormData) {
   revalidatePath("/lesson-records/new");
   revalidatePath(`/students/${enrollment.student_id}`);
   redirect(`/lesson-records/${data.lesson_record_id}`);
+}
+
+export async function deleteEnrollment(formData: FormData) {
+  const supabase = await createClient();
+  const enrollmentId = requiredText(formData, "enrollment_id");
+  const studentId = requiredText(formData, "student_id");
+
+  const { error } = await supabase
+    .from("enrollments")
+    .delete()
+    .eq("enrollment_id", enrollmentId);
+
+  if (error) throw error;
+
+  revalidatePath(`/students/${studentId}`);
+  revalidatePath("/lesson-records/new");
+  revalidatePath("/schedule");
+}
+
+export async function bulkPromoteGrades() {
+  const supabase = await createClient();
+
+  const { data: students, error } = await supabase
+    .from("students")
+    .select("student_id,grade")
+    .eq("status", "active");
+
+  if (error) throw error;
+
+  await Promise.all(
+    (students ?? [])
+      .filter((s) => normalizeGrade(s.grade) !== null)
+      .map((s) =>
+        supabase
+          .from("students")
+          .update({ grade: nextGrade(s.grade) })
+          .eq("student_id", s.student_id)
+      )
+  );
+
+  revalidatePath("/students");
+  revalidatePath("/dashboard");
 }
