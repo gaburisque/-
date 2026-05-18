@@ -5,12 +5,15 @@ import {
   Download,
   Filter,
   PenLine,
-  Search,
   SlidersHorizontal
 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/empty-state";
+import {
+  LessonRecordsStudentSearch,
+  type LessonRecordsStudentSearchOption
+} from "@/components/lesson-records-student-search";
 import { MockLessonRecordsButton } from "@/components/mock-lesson-records-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +27,7 @@ import {
   sortLessonRecords
 } from "@/lib/lesson-records";
 import { createClient } from "@/lib/supabase/server";
-import type { Course, LessonRecord, Student } from "@/lib/types";
+import type { Course, LessonRecord } from "@/lib/types";
 import { weekdayFromDate, weekdayOptions } from "@/lib/weekdays";
 
 const PAGE_SIZE = 25;
@@ -115,7 +118,7 @@ export default async function LessonRecordsPage({
   const [studentsResult, yearsResult, coursesResult] = await Promise.all([
     supabase
       .from("students")
-      .select("student_id,last_name,first_name,grade")
+      .select("student_id,last_name,first_name,last_name_kana,first_name_kana,grade")
       .order("last_name_kana", { ascending: true, nullsFirst: false }),
     supabase
       .from("lesson_records")
@@ -128,7 +131,7 @@ export default async function LessonRecordsPage({
       .order("course_name")
   ]);
 
-  const students = (studentsResult.data ?? []) as Student[];
+  const students = (studentsResult.data ?? []) as LessonRecordsStudentSearchOption[];
   const courses = uniqueCoursesByCanonicalName(
     (coursesResult.data ?? []) as Pick<Course, "course_id" | "course_name">[]
   );
@@ -350,23 +353,10 @@ export default async function LessonRecordsPage({
           <form className="space-y-4 border-t px-4 py-4">
             <input type="hidden" name="weekday" value={params.weekday ?? ""} />
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="relative sm:col-span-2">
-                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <NativeSelect
-                  name="student_id"
-                  defaultValue={params.student_id ?? ""}
-                  className="pl-9"
-                  aria-label="生徒"
-                >
-                  <option value="">すべての生徒</option>
-                  {students.map((student) => (
-                    <option key={student.student_id} value={student.student_id}>
-                      {fullName(student)}
-                      {student.grade ? ` / ${formatGrade(student.grade)}` : ""}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
+              <LessonRecordsStudentSearch
+                students={students}
+                selectedStudentId={params.student_id}
+              />
               <NativeSelect name="grade" defaultValue={params.grade ?? ""} aria-label="学年">
                 <option value="">すべての学年</option>
                 {gradeOptions.map((grade) => (
