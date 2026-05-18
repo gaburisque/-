@@ -5,6 +5,7 @@ import { ArrowLeft, CalendarDays, Clock, History, UserRound } from "lucide-react
 import { updateLessonRecord } from "@/app/actions";
 import { AppShell } from "@/components/app-shell";
 import { DeleteLessonRecordButton } from "@/components/delete-lesson-record-button";
+import { LessonRecordFormFields } from "@/components/lesson-record-content-fields";
 import { PrintButton } from "@/components/print-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,9 +13,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
-import { Textarea } from "@/components/ui/textarea";
 import { normalizeCourseName, uniqueCoursesByCanonicalName } from "@/lib/courses";
 import { emptyText, formatDate, formatTime, fullName } from "@/lib/format";
+import {
+  isStructuredLessonContent,
+  LESSON_CONTENT_DISPLAY_LABELS,
+  parseLessonRecordContent,
+  type LessonRecordContentFields
+} from "@/lib/lesson-record-content";
 import { createClient } from "@/lib/supabase/server";
 import type { Course, LessonRecord, LessonRecordHistory } from "@/lib/types";
 
@@ -43,60 +49,64 @@ function TextBlock({ title, value }: { title: string; value: string | null | und
   );
 }
 
-/** 「セクション名：内容」形式で構造化されたテキストをパースして表示 */
-function StructuredContent({ value }: { value: string | null | undefined }) {
-  if (!value) {
+function LessonRecordContentView({
+  content,
+  title,
+  homework,
+  memo
+}: {
+  content: string | null | undefined;
+  title: string | null | undefined;
+  homework: string | null | undefined;
+  memo: string | null | undefined;
+}) {
+  const parsed = parseLessonRecordContent(content, title);
+  const fieldKeys = Object.keys(LESSON_CONTENT_DISPLAY_LABELS) as (keyof LessonRecordContentFields)[];
+  const hasStructured = isStructuredLessonContent(content);
+
+  if (!hasStructured && content?.trim()) {
     return (
-      <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
-        記録なし
+      <div className="space-y-5">
+        {title?.trim() ? <TextBlock title="今日の目的" value={title} /> : null}
+        <TextBlock title="授業内容" value={content} />
+        {homework ? <TextBlock title="次回の予定・宿題" value={homework} /> : null}
+        {memo ? <TextBlock title="備考・保護者へのメモ" value={memo} /> : null}
       </div>
     );
   }
-
-  const SECTION_LABELS = [
-    "今日の目的",
-    "タイピング使用ツール",
-    "タイピングの様子",
-    "レッスン使用ツール",
-    "レッスンの様子",
-    "今日のワクワクの様子"
-  ];
-
-  const labelsPattern = SECTION_LABELS.map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-  const regex = new RegExp(`(${labelsPattern})：`, "g");
-  const hasStructure = regex.test(value);
-
-  if (!hasStructure) {
-    return (
-      <div className="whitespace-pre-wrap rounded-md border bg-white p-4 text-sm leading-7">
-        {value}
-      </div>
-    );
-  }
-
-  const splitRegex = new RegExp(`(?=(?:${labelsPattern})：)`);
-  const parts = value.split(splitRegex).filter(Boolean);
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {parts.map((part, i) => {
-        const colonIdx = part.indexOf("：");
-        if (colonIdx === -1) return null;
-        const label = part.slice(0, colonIdx).trim();
-        const content = part.slice(colonIdx + 1).trim();
-        if (!content) return null;
+    <div className="space-y-5">
+      {fieldKeys.map((key) => {
+        const value = parsed[key];
+        if (!value) return null;
+        const wide = key === "lesson_note";
         return (
-          <section key={i} className="space-y-1">
-            <h3 className="text-xs font-semibold text-muted-foreground">{label}</h3>
-            <div className="whitespace-pre-wrap rounded-md border bg-white p-3 text-sm leading-6">
-              {content}
+          <section key={key} className={`space-y-1.5 ${wide ? "" : "sm:max-w-xl"}`}>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {LESSON_CONTENT_DISPLAY_LABELS[key]}
+            </h2>
+            <div
+              className={`whitespace-pre-wrap rounded-md border bg-white text-sm leading-7 ${
+                wide ? "min-h-[120px] p-4" : "min-h-[56px] p-3"
+              }`}
+            >
+              {value}
             </div>
           </section>
         );
       })}
+      {homework ? <TextBlock title="次回の予定・宿題" value={homework} /> : null}
+      {memo ? <TextBlock title="備考・保護者へのメモ" value={memo} /> : null}
+      {!fieldKeys.some((key) => parsed[key]) && !homework && !memo ? (
+        <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
+          記録なし
+        </div>
+      ) : null}
     </div>
   );
 }
+
 
 export default async function LessonRecordDetailPage({
   params
@@ -133,6 +143,12 @@ export default async function LessonRecordDetailPage({
   const history = (historyResult.data ?? []) as LessonRecordHistory[];
   const startTime = record.start_time?.slice(0, 5) ?? "";
   const endTime = record.end_time?.slice(0, 5) ?? "";
+
+  const formDefaults = {
+    ...parseLessonRecordContent(record.content, record.title),
+    next_plan: record.homework ?? "",
+    remarks: record.memo ?? ""
+  };
 
   return (
     <AppShell>
@@ -217,30 +233,34 @@ export default async function LessonRecordDetailPage({
           </CardContent>
         </Card>
 
-        <div className="space-y-5">
-          <section className="space-y-1.5">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              授業内容
-            </h2>
-            <StructuredContent value={record.content} />
-          </section>
-          <TextBlock title="宿題・次回予定" value={record.homework} />
-          {record.memo && <TextBlock title="メモ" value={record.memo} />}
-        </div>
+        <LessonRecordContentView
+          content={record.content}
+          title={record.title}
+          homework={record.homework}
+          memo={record.memo}
+        />
 
         <Card className="print:hidden">
           <CardHeader>
             <CardTitle>授業記録を編集</CardTitle>
           </CardHeader>
           <CardContent>
-            <form action={updateLessonRecord} className="grid gap-4 md:grid-cols-2">
+            <form action={updateLessonRecord} className="grid gap-5 md:grid-cols-2">
               <input type="hidden" name="lesson_record_id" value={record.lesson_record_id} />
               <input type="hidden" name="student_id" value={record.student_id} />
-              <div className="space-y-2">
+
+              <div className="flex items-center gap-3 md:col-span-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  基本情報
+                </span>
+                <div className="flex-1 border-t" />
+              </div>
+
+              <div className="space-y-1.5">
                 <Label htmlFor="lesson_date">授業日</Label>
                 <Input id="lesson_date" name="lesson_date" type="date" defaultValue={record.lesson_date ?? ""} required />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <Label htmlFor="course_id">コース</Label>
                 <NativeSelect id="course_id" name="course_id" defaultValue={record.course_id ?? ""}>
                   <option value="">未選択</option>
@@ -251,7 +271,7 @@ export default async function LessonRecordDetailPage({
                   ))}
                 </NativeSelect>
               </div>
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-1.5">
                 <Label htmlFor="attendance_status">出欠</Label>
                 <NativeSelect id="attendance_status" name="attendance_status" defaultValue={record.attendance_status ?? ""}>
                   <option value="">未設定</option>
@@ -261,30 +281,17 @@ export default async function LessonRecordDetailPage({
                   <option value="substitute">振替</option>
                 </NativeSelect>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="start_time">開始</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="start_time">開始時刻</Label>
                 <Input id="start_time" name="start_time" type="time" defaultValue={startTime} />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="end_time">終了</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="end_time">終了時刻</Label>
                 <Input id="end_time" name="end_time" type="time" defaultValue={endTime} />
               </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="title">今日の目的</Label>
-                <Input id="title" name="title" defaultValue={record.title ?? ""} placeholder="例: 変数ブロックを使ったスコア実装" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="content">授業内容</Label>
-                <Textarea id="content" name="content" defaultValue={record.content ?? ""} className="min-h-[160px]" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="homework">宿題・次回予定</Label>
-                <Textarea id="homework" name="homework" defaultValue={record.homework ?? ""} />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="memo">メモ</Label>
-                <Textarea id="memo" name="memo" defaultValue={record.memo ?? ""} />
-              </div>
+
+              <LessonRecordFormFields defaults={formDefaults} />
+
               <div className="md:col-span-2">
                 <Button type="submit">編集内容を保存</Button>
               </div>

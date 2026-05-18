@@ -5,6 +5,11 @@ import { redirect } from "next/navigation";
 
 import { isCurrentUserAdmin } from "@/lib/authz";
 import { nextGrade, normalizeGrade } from "@/lib/grades";
+import {
+  buildLessonRecordContent,
+  lessonContentFieldsFromFormData,
+  structuredLessonContent
+} from "@/lib/lesson-record-content";
 import { createClient } from "@/lib/supabase/server";
 
 function optionalText(formData: FormData, key: string) {
@@ -18,13 +23,6 @@ function requiredText(formData: FormData, key: string) {
     throw new Error(`${key} is required.`);
   }
   return value;
-}
-
-function structuredNote(items: Array<[string, string | null]>) {
-  return items
-    .filter(([, value]) => value && value.trim().length > 0)
-    .map(([label, value]) => `${label}：${value}`)
-    .join("\n\n");
 }
 
 const mockCourses = [
@@ -153,7 +151,7 @@ function mockLessonTitle(courseName: string, weekOffset: number) {
 
 function mockLessonContent(courseName: string, title: string, n: number, weekOffset: number) {
   if (courseName === "イラスト") {
-    return structuredNote([
+    return structuredLessonContent([
       ["今日の目的", title],
       ["レッスン使用ツール", "Clip Studio Paint"],
       [
@@ -174,7 +172,7 @@ function mockLessonContent(courseName: string, title: string, n: number, weekOff
   const lessonTool =
     courseName === "Scratch" ? "Scratch 3.0" : courseName === "Roblox" ? "Roblox Studio" : "VS Code / ブラウザ";
 
-  return structuredNote([
+  return structuredLessonContent([
     ["今日の目的", title],
     ["タイピング使用ツール", ["Typing.com", "Keybr", "e-Typing"][(n + weekOffset) % 3]],
     [
@@ -475,7 +473,7 @@ export async function addLessonRecord(formData: FormData) {
     end_time: optionalText(formData, "end_time"),
     title: optionalText(formData, "title"),
     content:
-      structuredNote([
+      structuredLessonContent([
         ["受講", attendance],
         ["内容", content],
         ["タイピングツール", typingTool],
@@ -497,6 +495,8 @@ export async function updateLessonRecord(formData: FormData) {
   const lessonRecordId = requiredText(formData, "lesson_record_id");
   const studentId = requiredText(formData, "student_id");
   const staffId = await ensureCurrentStaffId(supabase);
+  const contentFields = lessonContentFieldsFromFormData(formData);
+  const goal = contentFields.goal || null;
 
   const {
     data: { user }
@@ -529,10 +529,10 @@ export async function updateLessonRecord(formData: FormData) {
       attendance_status: optionalText(formData, "attendance_status"),
       start_time: optionalText(formData, "start_time"),
       end_time: optionalText(formData, "end_time"),
-      title: optionalText(formData, "title"),
-      content: optionalText(formData, "content"),
-      homework: optionalText(formData, "homework"),
-      memo: optionalText(formData, "memo"),
+      title: goal,
+      content: buildLessonRecordContent(contentFields),
+      homework: optionalText(formData, "next_plan"),
+      memo: optionalText(formData, "remarks"),
       staff_id: staffId
     })
     .eq("lesson_record_id", lessonRecordId);
@@ -624,14 +624,8 @@ export async function addScheduledLessonRecord(formData: FormData) {
   const supabase = await createClient();
   const enrollmentId = requiredText(formData, "enrollment_id");
   const staffId = await ensureCurrentStaffId(supabase);
-  const goal = optionalText(formData, "goal");
-  const typingTool = optionalText(formData, "typing_tool");
-  const typingNote = optionalText(formData, "typing_note");
-  const lessonTool = optionalText(formData, "lesson_tool");
-  const lessonNote = optionalText(formData, "lesson_note");
-  const excitementNote = optionalText(formData, "excitement_note");
-  const nextPlan = optionalText(formData, "next_plan");
-  const remarks = optionalText(formData, "remarks");
+  const contentFields = lessonContentFieldsFromFormData(formData);
+  const goal = contentFields.goal || null;
   const attendanceStatus = optionalText(formData, "attendance_status");
 
   const { data: enrollment, error: enrollmentError } = await supabase
@@ -655,17 +649,9 @@ export async function addScheduledLessonRecord(formData: FormData) {
       end_time: optionalText(formData, "end_time"),
       attendance_status: attendanceStatus || null,
       title: goal,
-      content:
-        structuredNote([
-          ["今日の目的", goal],
-          ["タイピング使用ツール", typingTool],
-          ["タイピングの様子", typingNote],
-          ["レッスン使用ツール", lessonTool],
-          ["レッスンの様子", lessonNote],
-          ["今日のワクワクの様子", excitementNote]
-        ]) || null,
-      homework: nextPlan,
-      memo: remarks
+      content: buildLessonRecordContent(contentFields),
+      homework: optionalText(formData, "next_plan"),
+      memo: optionalText(formData, "remarks")
     })
     .select("lesson_record_id")
     .single();
@@ -676,6 +662,11 @@ export async function addScheduledLessonRecord(formData: FormData) {
   revalidatePath("/lesson-records");
   revalidatePath("/lesson-records/new");
   revalidatePath(`/students/${enrollment.student_id}`);
+
+  const redirectTo = optionalText(formData, "redirect_to");
+  if (redirectTo && redirectTo.startsWith("/lesson-records/new")) {
+    redirect(redirectTo);
+  }
   redirect(`/lesson-records/${data.lesson_record_id}`);
 }
 
@@ -683,14 +674,8 @@ export async function saveDraftLessonRecord(formData: FormData) {
   const supabase = await createClient();
   const enrollmentId = requiredText(formData, "enrollment_id");
   const staffId = await ensureCurrentStaffId(supabase);
-  const goal = optionalText(formData, "goal");
-  const typingTool = optionalText(formData, "typing_tool");
-  const typingNote = optionalText(formData, "typing_note");
-  const lessonTool = optionalText(formData, "lesson_tool");
-  const lessonNote = optionalText(formData, "lesson_note");
-  const excitementNote = optionalText(formData, "excitement_note");
-  const nextPlan = optionalText(formData, "next_plan");
-  const remarks = optionalText(formData, "remarks");
+  const contentFields = lessonContentFieldsFromFormData(formData);
+  const goal = contentFields.goal || null;
 
   const { data: enrollment, error: enrollmentError } = await supabase
     .from("enrollments")
@@ -713,17 +698,9 @@ export async function saveDraftLessonRecord(formData: FormData) {
       end_time: optionalText(formData, "end_time"),
       attendance_status: null,
       title: goal,
-      content:
-        structuredNote([
-          ["今日の目的", goal],
-          ["タイピング使用ツール", typingTool],
-          ["タイピングの様子", typingNote],
-          ["レッスン使用ツール", lessonTool],
-          ["レッスンの様子", lessonNote],
-          ["今日のワクワクの様子", excitementNote]
-        ]) || null,
-      homework: nextPlan,
-      memo: remarks
+      content: buildLessonRecordContent(contentFields),
+      homework: optionalText(formData, "next_plan"),
+      memo: optionalText(formData, "remarks")
     })
     .select("lesson_record_id")
     .single();
@@ -733,6 +710,11 @@ export async function saveDraftLessonRecord(formData: FormData) {
   revalidatePath("/lesson-records");
   revalidatePath("/lesson-records/new");
   revalidatePath(`/students/${enrollment.student_id}`);
+
+  const redirectTo = optionalText(formData, "redirect_to");
+  if (redirectTo && redirectTo.startsWith("/lesson-records/new")) {
+    redirect(redirectTo);
+  }
   redirect(`/lesson-records/${data.lesson_record_id}`);
 }
 
