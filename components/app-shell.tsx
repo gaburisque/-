@@ -2,8 +2,10 @@ import Link from "next/link";
 import {
   BookOpen,
   ClipboardList,
+  ListChecks,
   LogOut,
   Settings,
+  UserPlus,
   Users
 } from "lucide-react";
 
@@ -12,8 +14,10 @@ import { Button } from "@/components/ui/button";
 import { APP_NAME } from "@/lib/branding";
 
 const navItems = [
-  { href: "/lesson-records/new", label: "記録", icon: ClipboardList },
+  { href: "/lesson-records/new", label: "記録入力", icon: ClipboardList },
+  { href: "/lesson-records", label: "記録一覧", icon: ListChecks },
   { href: "/students", label: "生徒", icon: Users },
+  { href: "/students/new", label: "生徒登録", icon: UserPlus },
   { href: "/settings", label: "設定", icon: Settings }
 ];
 

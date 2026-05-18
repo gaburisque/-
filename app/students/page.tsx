@@ -1,18 +1,14 @@
 import Link from "next/link";
 import { Search, UserPlus } from "lucide-react";
 
-import { createStudent } from "@/app/actions";
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/empty-state";
 import { GradePromotionButton } from "@/components/grade-promotion-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { fullName } from "@/lib/format";
 import { formatGradeOrAge, gradeOptions, nextGrade, normalizeGrade } from "@/lib/grades";
 import { one } from "@/lib/relations";
@@ -56,7 +52,6 @@ export default async function StudentsPage({
 
   const { data: students } = await query;
 
-  // 進級プレビュー（active生徒で grade が認識できる人）
   const activeStudents = (students ?? []) as unknown as (Student & { birth_date?: string | null })[];
   const promotingStudents = activeStudents.filter(
     (s) => s.status === "active" && normalizeGrade(s.grade) !== null
@@ -66,180 +61,116 @@ export default async function StudentsPage({
   return (
     <AppShell>
       <div className="space-y-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+        <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-normal">生徒</h1>
-            <p className="mt-1 text-sm text-muted-foreground">生徒一覧、検索、登録を行います。</p>
+            <h1 className="text-xl font-semibold tracking-tight">生徒</h1>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {students?.length ?? 0}件 ・ 検索 / 学年・学校で絞り込み
+            </p>
           </div>
-          <GradePromotionButton
-            promotingCount={promotingStudents.length}
-            graduatingCount={graduatingCount}
-          />
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>検索・絞り込み</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form className="grid gap-3 md:grid-cols-[1fr_180px_220px_auto]">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input name="q" defaultValue={params.q ?? ""} placeholder="氏名・ふりがな" className="pl-9" />
-              </div>
-              <NativeSelect name="grade" defaultValue={params.grade ?? ""}>
-                <option value="">すべての学年</option>
-                {gradeOptions.map((grade) => (
-                  <option key={grade} value={grade}>
-                    {grade}
-                  </option>
-                ))}
-              </NativeSelect>
-              <NativeSelect name="school_id" defaultValue={params.school_id ?? ""}>
-                <option value="">すべての学校</option>
-                {schools.map((school) => (
-                  <option key={school.school_id} value={school.school_id}>
-                    {school.school_name}
-                  </option>
-                ))}
-              </NativeSelect>
-              <Button type="submit">絞り込み</Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>生徒一覧</CardTitle>
-                <CardDescription>{students?.length ?? 0}件</CardDescription>
-              </div>
-              <a href="/api/students/export">
-                <Button variant="outline" size="sm" type="button">
-                  CSVダウンロード
-                </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <GradePromotionButton
+              promotingCount={promotingStudents.length}
+              graduatingCount={graduatingCount}
+            />
+            <Button asChild variant="outline" size="sm">
+              <a href="/api/students/export" download>
+                CSV出力
               </a>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {students && students.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>氏名</TableHead>
-                    <TableHead>学年</TableHead>
-                    <TableHead>学校</TableHead>
-                    <TableHead>連絡先</TableHead>
-                    <TableHead>状態</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(students as unknown as (Student & { birth_date?: string | null })[]).map((student) => (
-                    <TableRow key={student.student_id}>
-                      <TableCell>
-                        <Link
-                          href={`/students/${student.student_id}`}
-                          className="font-medium text-primary hover:underline"
-                        >
-                          {fullName(student)}
-                        </Link>
-                        <div className="text-xs text-muted-foreground">
-                          {[student.last_name_kana, student.first_name_kana].filter(Boolean).join(" ") || "-"}
-                        </div>
-                      </TableCell>
-                      <TableCell>{formatGradeOrAge(student.grade, student.birth_date)}</TableCell>
-                      <TableCell>{one(student.schools)?.school_name ?? "-"}</TableCell>
-                      <TableCell>
-                        <div>{student.phone ?? "-"}</div>
-                        <div className="text-xs text-muted-foreground">{student.email ?? ""}</div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge>{student.status}</Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <EmptyState>条件に一致する生徒がいません。</EmptyState>
-            )}
-          </CardContent>
-        </Card>
+            </Button>
+            <Button asChild size="sm">
+              <Link href="/students/new">
+                <UserPlus className="h-4 w-4" />
+                生徒を追加
+              </Link>
+            </Button>
+          </div>
+        </header>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <UserPlus className="h-5 w-5" />
-              生徒登録
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form action={createStudent} className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="last_name">姓</Label>
-                <Input id="last_name" name="last_name" required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="first_name">名</Label>
-                <Input id="first_name" name="first_name" required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="last_name_kana">姓かな</Label>
-                <Input id="last_name_kana" name="last_name_kana" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="first_name_kana">名かな</Label>
-                <Input id="first_name_kana" name="first_name_kana" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="grade">学年</Label>
-                <NativeSelect id="grade" name="grade">
-                  <option value="">未選択</option>
-                  {gradeOptions.map((grade) => (
-                    <option key={grade} value={grade}>
-                      {grade}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="school_id">学校</Label>
-                <NativeSelect id="school_id" name="school_id">
-                  <option value="">未選択</option>
-                  {schools.map((school) => (
-                    <option key={school.school_id} value={school.school_id}>
-                      {school.school_name}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="birth_date">生年月日</Label>
-                <Input id="birth_date" name="birth_date" type="date" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="gender">性別</Label>
-                <Input id="gender" name="gender" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="phone">電話番号</Label>
-                <Input id="phone" name="phone" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">メール</Label>
-                <Input id="email" name="email" type="email" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="notes">メモ</Label>
-                <Textarea id="notes" name="notes" />
-              </div>
-              <div className="md:col-span-2">
-                <Button type="submit">登録</Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+        <form className="grid gap-2 md:grid-cols-[1fr_180px_220px_auto]">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              name="q"
+              defaultValue={params.q ?? ""}
+              placeholder="氏名・ふりがなで検索"
+              className="pl-9"
+            />
+          </div>
+          <NativeSelect name="grade" defaultValue={params.grade ?? ""} aria-label="学年">
+            <option value="">すべての学年</option>
+            {gradeOptions.map((grade) => (
+              <option key={grade} value={grade}>
+                {grade}
+              </option>
+            ))}
+          </NativeSelect>
+          <NativeSelect
+            name="school_id"
+            defaultValue={params.school_id ?? ""}
+            aria-label="学校"
+          >
+            <option value="">すべての学校</option>
+            {schools.map((school) => (
+              <option key={school.school_id} value={school.school_id}>
+                {school.school_name}
+              </option>
+            ))}
+          </NativeSelect>
+          <Button type="submit" variant="outline">
+            絞り込み
+          </Button>
+        </form>
+
+        {students && students.length > 0 ? (
+          <div className="overflow-x-auto rounded-md border">
+            <Table className="min-w-[720px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>氏名</TableHead>
+                  <TableHead className="w-[100px]">学年</TableHead>
+                  <TableHead>学校</TableHead>
+                  <TableHead>連絡先</TableHead>
+                  <TableHead className="w-[80px]">状態</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {activeStudents.map((student) => (
+                  <TableRow key={student.student_id} className="hover:bg-muted/40">
+                    <TableCell>
+                      <Link
+                        href={`/students/${student.student_id}`}
+                        className="font-medium text-foreground hover:text-primary hover:underline"
+                      >
+                        {fullName(student)}
+                      </Link>
+                      <div className="text-xs text-muted-foreground">
+                        {[student.last_name_kana, student.first_name_kana]
+                          .filter(Boolean)
+                          .join(" ") || "-"}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {formatGradeOrAge(student.grade, student.birth_date)}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {one(student.schools)?.school_name ?? "-"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      <div>{student.phone ?? "-"}</div>
+                      <div className="text-xs text-muted-foreground">{student.email ?? ""}</div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge>{student.status}</Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <EmptyState>条件に一致する生徒がいません。</EmptyState>
+        )}
       </div>
     </AppShell>
   );
