@@ -145,7 +145,12 @@ export default async function LessonRecordDetailPage({
                 授業記録一覧へ戻る
               </Link>
             </Button>
-            <h1 className="text-2xl font-semibold tracking-normal">{emptyText(record.title)}</h1>
+            <h1 className="text-2xl font-semibold tracking-normal">
+              {record.students ? fullName(record.students) : "授業記録"}
+              <span className="ml-2 text-base font-normal text-muted-foreground">
+                {formatDate(record.lesson_date)}
+              </span>
+            </h1>
             <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
               <Badge className="gap-1 bg-white">
                 <CalendarDays className="h-3.5 w-3.5" />
@@ -265,8 +270,8 @@ export default async function LessonRecordDetailPage({
                 <Input id="end_time" name="end_time" type="time" defaultValue={endTime} />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="title">タイトル</Label>
-                <Input id="title" name="title" defaultValue={record.title ?? ""} />
+                <Label htmlFor="title">今日の目的</Label>
+                <Input id="title" name="title" defaultValue={record.title ?? ""} placeholder="例: 変数ブロックを使ったスコア実装" />
               </div>
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="content">授業内容</Label>

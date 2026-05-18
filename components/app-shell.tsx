@@ -2,7 +2,6 @@ import Link from "next/link";
 import {
   BookOpen,
   CalendarCheck,
-  CalendarRange,
   ClipboardList,
   FileStack,
   GraduationCap,
@@ -22,7 +21,6 @@ const navItems = [
   { href: "/lesson-records", label: "授業記録", icon: ClipboardList },
   { href: "/attendance", label: "出席", icon: CalendarCheck },
   { href: "/courses", label: "コース", icon: GraduationCap },
-  { href: "/schedule", label: "スケジュール", icon: CalendarRange },
   { href: "/documents", label: "教材", icon: FileStack },
   { href: "/staff", label: "スタッフ", icon: UserCog }
 ];

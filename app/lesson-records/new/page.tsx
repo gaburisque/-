@@ -458,17 +458,20 @@ export default async function NewLessonRecordPage({
                   <Textarea
                     id="typing_note"
                     name="typing_note"
-                    className="min-h-[88px] resize-y"
+                    className="min-h-[80px] resize-y"
                     placeholder="スピード・正確さ・集中度など"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="lesson_note">授業の様子</Label>
+
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor="lesson_note" className="text-sm font-semibold">
+                    授業の様子 <span className="ml-1 text-xs font-normal text-muted-foreground">（最重要）</span>
+                  </Label>
                   <Textarea
                     id="lesson_note"
                     name="lesson_note"
-                    className="min-h-[88px] resize-y"
-                    placeholder="取り組み・理解度・つまずきなど"
+                    className="min-h-[160px] resize-y"
+                    placeholder="取り組み・理解度・つまずき・集中度・会話の内容など、詳しく記録"
                   />
                 </div>
 
