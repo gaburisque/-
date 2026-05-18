@@ -3,6 +3,7 @@ import { Download, PenLine, Search } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/empty-state";
+import { MockLessonRecordsButton } from "@/components/mock-lesson-records-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -119,6 +120,7 @@ export default async function LessonRecordsPage({
               {sortedRecords.length}件の記録
             </p>
           </div>
+          {process.env.NODE_ENV === "development" && <MockLessonRecordsButton />}
           <Button asChild variant="outline" size="sm">
             <a
               href={`/api/lesson-records/export?${new URLSearchParams(

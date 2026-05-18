@@ -14,11 +14,10 @@ import { normalizeCourseName } from "@/lib/courses";
 import { dedupeEnrollmentsByStudentCourseTime } from "@/lib/enrollments";
 import { formatTime, fullName } from "@/lib/format";
 import { formatGrade } from "@/lib/grades";
-import { lessonEndTimeOptions, lessonStartTimeOptions } from "@/lib/lesson-times";
 import { one } from "@/lib/relations";
 import { createClient } from "@/lib/supabase/server";
 import type { Enrollment, Staff } from "@/lib/types";
-import { parseWeekday } from "@/lib/weekdays";
+import { parseWeekday, weekdayFromDate } from "@/lib/weekdays";
 
 const COURSE_DOT: Record<string, string> = {
   Scratch: "bg-blue-400",
@@ -59,6 +58,7 @@ export default async function NewLessonRecordPage({
 
   const [
     enrollmentsResult,
+    lessonRecordsResult,
     {
       data: { user }
     }
@@ -69,8 +69,12 @@ export default async function NewLessonRecordPage({
         "enrollment_id,student_id,course_id,schedule_label,weekday,start_time,frequency,status,students(student_id,last_name,first_name,grade),courses(course_id,course_name)"
       )
       .eq("status", "active")
-      .eq("weekday", weekday)
       .order("start_time", { ascending: true, nullsFirst: false }),
+    supabase
+      .from("lesson_records")
+      .select("student_id,course_id,lesson_date")
+      .order("lesson_date", { ascending: false })
+      .limit(1000),
     supabase.auth.getUser()
   ]);
 
@@ -85,9 +89,23 @@ export default async function NewLessonRecordPage({
   const migrationRequired =
     Boolean(enrollmentsResult.error) &&
     enrollmentsResult.error?.message.toLowerCase().includes("weekday");
-  const visibleEnrollments = dedupeEnrollmentsByStudentCourseTime(
-    (enrollmentsResult.data ?? []) as Enrollment[]
-  );
+  const latestLessonWeekdayByStudentCourse = new Map<string, string>();
+  for (const record of lessonRecordsResult.data ?? []) {
+    const key = `${record.student_id}:${record.course_id ?? ""}`;
+    if (!latestLessonWeekdayByStudentCourse.has(key)) {
+      const latestWeekday = weekdayFromDate(record.lesson_date);
+      if (latestWeekday) {
+        latestLessonWeekdayByStudentCourse.set(key, latestWeekday);
+      }
+    }
+  }
+  const visibleEnrollments = dedupeEnrollmentsByStudentCourseTime((enrollmentsResult.data ?? []) as Enrollment[])
+    .filter((enrollment) => {
+      const previousWeekday = latestLessonWeekdayByStudentCourse.get(
+        `${enrollment.student_id}:${enrollment.course_id}`
+      );
+      return (previousWeekday ?? enrollment.weekday) === weekday;
+    });
   const currentStaff = staffResult.data as Staff | null;
   const recorderName =
     currentStaff?.name ??
@@ -203,7 +221,7 @@ export default async function NewLessonRecordPage({
               )}
             </CardHeader>
             <CardContent>
-              <form action={addScheduledLessonRecord} className="grid gap-5 md:grid-cols-2">
+              <form key={selectedEnrollmentId} action={addScheduledLessonRecord} className="grid gap-5 md:grid-cols-2">
 
                 {/* ── 基本情報 ── */}
                 <SectionDivider label="基本情報" />
@@ -251,33 +269,24 @@ export default async function NewLessonRecordPage({
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="start_time">開始</Label>
-                    <NativeSelect
+                    <Input
                       id="start_time"
                       name="start_time"
+                      type="time"
                       defaultValue={
                         formatTime(selectedEnrollment?.start_time) === "-"
                           ? ""
                           : formatTime(selectedEnrollment?.start_time)
                       }
-                    >
-                      <option value="">予定時刻</option>
-                      {lessonStartTimeOptions.map((time) => (
-                        <option key={time} value={time}>
-                          {time}
-                        </option>
-                      ))}
-                    </NativeSelect>
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="end_time">終了</Label>
-                    <NativeSelect id="end_time" name="end_time">
-                      <option value="">未選択</option>
-                      {lessonEndTimeOptions.map((time) => (
-                        <option key={time} value={time}>
-                          {time}
-                        </option>
-                      ))}
-                    </NativeSelect>
+                    <Input
+                      id="end_time"
+                      name="end_time"
+                      type="time"
+                    />
                   </div>
                 </div>
 
