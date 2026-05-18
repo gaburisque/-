@@ -679,6 +679,63 @@ export async function addScheduledLessonRecord(formData: FormData) {
   redirect(`/lesson-records/${data.lesson_record_id}`);
 }
 
+export async function saveDraftLessonRecord(formData: FormData) {
+  const supabase = await createClient();
+  const enrollmentId = requiredText(formData, "enrollment_id");
+  const staffId = await ensureCurrentStaffId(supabase);
+  const goal = optionalText(formData, "goal");
+  const typingTool = optionalText(formData, "typing_tool");
+  const typingNote = optionalText(formData, "typing_note");
+  const lessonTool = optionalText(formData, "lesson_tool");
+  const lessonNote = optionalText(formData, "lesson_note");
+  const excitementNote = optionalText(formData, "excitement_note");
+  const nextPlan = optionalText(formData, "next_plan");
+  const remarks = optionalText(formData, "remarks");
+
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from("enrollments")
+    .select("student_id,course_id,start_time")
+    .eq("enrollment_id", enrollmentId)
+    .single();
+
+  if (enrollmentError || !enrollment) {
+    throw enrollmentError ?? new Error("Enrollment not found.");
+  }
+
+  const { data, error } = await supabase
+    .from("lesson_records")
+    .insert({
+      student_id: enrollment.student_id,
+      course_id: enrollment.course_id,
+      staff_id: staffId,
+      lesson_date: requiredText(formData, "lesson_date"),
+      start_time: optionalText(formData, "start_time") ?? enrollment.start_time,
+      end_time: optionalText(formData, "end_time"),
+      attendance_status: null,
+      title: goal,
+      content:
+        structuredNote([
+          ["今日の目的", goal],
+          ["タイピング使用ツール", typingTool],
+          ["タイピングの様子", typingNote],
+          ["レッスン使用ツール", lessonTool],
+          ["レッスンの様子", lessonNote],
+          ["今日のワクワクの様子", excitementNote]
+        ]) || null,
+      homework: nextPlan,
+      memo: remarks
+    })
+    .select("lesson_record_id")
+    .single();
+
+  if (error) throw error;
+
+  revalidatePath("/lesson-records");
+  revalidatePath("/lesson-records/new");
+  revalidatePath(`/students/${enrollment.student_id}`);
+  redirect(`/lesson-records/${data.lesson_record_id}`);
+}
+
 export async function deleteEnrollment(formData: FormData) {
   const supabase = await createClient();
   const enrollmentId = requiredText(formData, "enrollment_id");
