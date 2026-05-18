@@ -262,6 +262,8 @@ Scheduleページは複数回改善されています。
 - [x] コース管理ページ追加
 - [x] ナビ整理
 
+- [x] 記録一覧ページをカード型・曜日ピル・詳細条件折りたたみ・ページネーション付きで刷新（2026-05-18）
+
 ### 次にやること（UI）
 
 - Vercel にデプロイ済みの本番環境で動作確認
@@ -278,7 +280,7 @@ Scheduleページは複数回改善されています。
 
 ### 環境に関する注意
 
-- `.env.local` の Supabase URL が本番かStagingかをユーザーが確認中
+- **ローカルの `.env.local` は検証用 Supabase を指すこと。** 本番 URL のままだと `npm run dev` でも本番 DB に接続する。README に注意書きを追加済み（2026-05-18）。
 - Supabase に2つのプロジェクトが存在（本番・仮）が確認済みだが、Vercel の向き先は未確認
 - 仮データ追加ボタンは本番には表示されない（`NODE_ENV === "development"` 制御済み）
 - `scripts/seed-mock.ts` はログイン認証が必要。`SUPABASE_EMAIL` / `SUPABASE_PASSWORD` 環境変数で実行

@@ -1,5 +1,13 @@
 import Link from "next/link";
-import { Download, PenLine, Search } from "lucide-react";
+import {
+  CalendarRange,
+  ChevronRight,
+  Download,
+  Filter,
+  PenLine,
+  Search,
+  SlidersHorizontal
+} from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/empty-state";
@@ -19,6 +27,8 @@ import { createClient } from "@/lib/supabase/server";
 import type { Course, LessonRecord, Student } from "@/lib/types";
 import { weekdayFromDate, weekdayOptions } from "@/lib/weekdays";
 
+const PAGE_SIZE = 25;
+
 const ATTENDANCE_LABELS: Record<string, string> = {
   present: "出席",
   absent: "欠席",
@@ -27,10 +37,10 @@ const ATTENDANCE_LABELS: Record<string, string> = {
 };
 
 const ATTENDANCE_COLORS: Record<string, string> = {
-  present: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  absent: "bg-rose-50 text-rose-700 border-rose-200",
-  late: "bg-amber-50 text-amber-700 border-amber-200",
-  substitute: "bg-sky-50 text-sky-700 border-sky-200"
+  present: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+  absent: "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
+  late: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
+  substitute: "bg-sky-50 text-sky-700 ring-1 ring-sky-200"
 };
 
 const COURSE_DOT: Record<string, string> = {
@@ -41,10 +51,10 @@ const COURSE_DOT: Record<string, string> = {
 };
 
 const GROUP_OPTIONS = [
-  { value: "", label: "なし（一覧）" },
-  { value: "grade", label: "学年別" },
-  { value: "weekday", label: "曜日別" },
-  { value: "course", label: "コース別" }
+  { value: "", label: "一覧のみ" },
+  { value: "grade", label: "学年別に見出し" },
+  { value: "weekday", label: "曜日別に見出し" },
+  { value: "course", label: "コース別に見出し" }
 ] as const;
 
 type GroupKey = "grade" | "weekday" | "course" | "";
@@ -52,6 +62,19 @@ type GroupKey = "grade" | "weekday" | "course" | "";
 function parseGroup(value: string | undefined): GroupKey {
   if (value === "grade" || value === "weekday" || value === "course") return value;
   return "";
+}
+
+function buildListQuery(
+  base: Record<string, string | undefined>,
+  overrides: Record<string, string | undefined>
+) {
+  const merged = { ...base, ...overrides };
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(merged)) {
+    if (v !== undefined && v !== "") sp.set(k, v);
+  }
+  const q = sp.toString();
+  return q ? `/lesson-records?${q}` : "/lesson-records";
 }
 
 export default async function LessonRecordsPage({
@@ -67,12 +90,27 @@ export default async function LessonRecordsPage({
     weekday?: string;
     sort?: string;
     group?: string;
+    page?: string;
   }>;
 }) {
   const params = await searchParams;
   const supabase = await createClient();
   const sort = parseLessonRecordSort(params.sort);
   const group = parseGroup(params.group);
+  const pageNum = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
+
+  const preserved = {
+    student_id: params.student_id,
+    grade: params.grade,
+    course_id: params.course_id,
+    weekday: params.weekday,
+    year: params.year,
+    from: params.from,
+    to: params.to,
+    sort,
+    group: group || undefined,
+    page: undefined as string | undefined
+  };
 
   const [studentsResult, yearsResult, coursesResult] = await Promise.all([
     supabase
@@ -110,12 +148,8 @@ export default async function LessonRecordsPage({
     .order("lesson_date", { ascending: false })
     .order("start_time", { ascending: false, nullsFirst: false });
 
-  if (params.student_id) {
-    recordsQuery = recordsQuery.eq("student_id", params.student_id);
-  }
-  if (params.course_id) {
-    recordsQuery = recordsQuery.eq("course_id", params.course_id);
-  }
+  if (params.student_id) recordsQuery = recordsQuery.eq("student_id", params.student_id);
+  if (params.course_id) recordsQuery = recordsQuery.eq("course_id", params.course_id);
   if (params.year) {
     recordsQuery = recordsQuery
       .gte("lesson_date", `${params.year}-01-01`)
@@ -139,8 +173,11 @@ export default async function LessonRecordsPage({
   }
 
   const sortedRecords = sortLessonRecords(filteredRecords, sort);
+  const totalCount = sortedRecords.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const safePage = Math.min(pageNum, totalPages);
+  const pageOffset = (safePage - 1) * PAGE_SIZE;
 
-  // グループ化
   const groups = (() => {
     if (!group) return null;
     const map = new Map<string, LessonRecord[]>();
@@ -180,132 +217,198 @@ export default async function LessonRecordsPage({
     )
   ).toString()}`;
 
+  const activeFilters: { label: string; href: string }[] = [];
+  if (params.student_id) {
+    const s = students.find((st) => st.student_id === params.student_id);
+    activeFilters.push({
+      label: `生徒: ${s ? fullName(s) : params.student_id}`,
+      href: buildListQuery(preserved, { student_id: undefined, page: "1" })
+    });
+  }
+  if (params.grade)
+    activeFilters.push({
+      label: `学年: ${params.grade}`,
+      href: buildListQuery(preserved, { grade: undefined, page: "1" })
+    });
+  if (params.course_id) {
+    const c = courses.find((co) => co.course_id === params.course_id);
+    activeFilters.push({
+      label: `コース: ${c ? normalizeCourseName(c.course_name) : params.course_id}`,
+      href: buildListQuery(preserved, { course_id: undefined, page: "1" })
+    });
+  }
+  if (params.weekday)
+    activeFilters.push({
+      label: `${params.weekday}曜`,
+      href: buildListQuery(preserved, { weekday: undefined, page: "1" })
+    });
+  if (params.year)
+    activeFilters.push({
+      label: `${params.year}年`,
+      href: buildListQuery(preserved, { year: undefined, page: "1" })
+    });
+  if (params.from || params.to)
+    activeFilters.push({
+      label: `期間: ${params.from ?? "…"}〜${params.to ?? "…"}`,
+      href: buildListQuery(preserved, { from: undefined, to: undefined, page: "1" })
+    });
+
   return (
     <AppShell>
-      <div className="space-y-6">
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">授業記録一覧</h1>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {sortedRecords.length}件 ・{" "}
+      <div className="mx-auto max-w-4xl space-y-6">
+        <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-4">
+          <div className="space-y-1">
+            <h1 className="text-xl font-semibold tracking-tight">記録一覧</h1>
+            <p className="text-xs text-muted-foreground">
+              {totalCount}件
+              {totalPages > 1 &&
+                ` · ${PAGE_SIZE}件ずつ（${safePage}/${totalPages}ページ）`}
+              {" · "}
               {lessonRecordSortOptions.find((o) => o.value === sort)?.label}
-              {group && `・${GROUP_OPTIONS.find((g) => g.value === group)?.label}`}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-2">
             {process.env.NODE_ENV === "development" && <MockLessonRecordsButton />}
             <Button asChild variant="outline" size="sm">
               <a href={exportUrl} download>
                 <Download className="h-4 w-4" />
-                CSV出力
+                CSV
               </a>
             </Button>
             <Button asChild size="sm">
               <Link href="/lesson-records/new">
                 <PenLine className="h-4 w-4" />
-                記録を入力
+                入力へ
               </Link>
             </Button>
           </div>
         </header>
 
-        {/* フィルター */}
-        <form className="space-y-3 rounded-md border bg-card p-4">
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="relative sm:col-span-2 lg:col-span-2">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <NativeSelect
-                name="student_id"
-                defaultValue={params.student_id ?? ""}
-                className="pl-9"
-                aria-label="生徒"
+        {/* 曜日クイック */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground">曜日</span>
+          <Link
+            href={buildListQuery(preserved, { weekday: undefined, page: "1" })}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              !params.weekday
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:bg-muted/80"
+            }`}
+          >
+            すべて
+          </Link>
+          {weekdayOptions.map((w) => (
+            <Link
+              key={w}
+              href={buildListQuery(preserved, {
+                weekday: w,
+                page: "1"
+              })}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                params.weekday === w
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
+            >
+              {w}
+            </Link>
+          ))}
+        </div>
+
+        {/* 適用中フィルター */}
+        {activeFilters.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+            {activeFilters.map((f) => (
+              <Link
+                key={f.label}
+                href={f.href}
+                className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs hover:bg-muted"
               >
-                <option value="">すべての生徒</option>
-                {students.map((student) => (
-                  <option key={student.student_id} value={student.student_id}>
-                    {fullName(student)}
-                    {student.grade ? ` / ${formatGrade(student.grade)}` : ""}
+                {f.label}
+                <span className="text-muted-foreground">×</span>
+              </Link>
+            ))}
+            <Link
+              href="/lesson-records"
+              className="text-xs text-muted-foreground underline underline-offset-2"
+            >
+              すべて解除
+            </Link>
+          </div>
+        )}
+
+        {/* 詳細フィルター */}
+        <details className="group rounded-lg border bg-card">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium">
+            <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+            詳細条件
+            <span className="ml-auto text-xs font-normal text-muted-foreground group-open:hidden">
+              開く
+            </span>
+          </summary>
+          <form className="space-y-4 border-t px-4 py-4">
+            <input type="hidden" name="weekday" value={params.weekday ?? ""} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="relative sm:col-span-2">
+                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <NativeSelect
+                  name="student_id"
+                  defaultValue={params.student_id ?? ""}
+                  className="pl-9"
+                  aria-label="生徒"
+                >
+                  <option value="">すべての生徒</option>
+                  {students.map((student) => (
+                    <option key={student.student_id} value={student.student_id}>
+                      {fullName(student)}
+                      {student.grade ? ` / ${formatGrade(student.grade)}` : ""}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+              <NativeSelect name="grade" defaultValue={params.grade ?? ""} aria-label="学年">
+                <option value="">すべての学年</option>
+                {gradeOptions.map((grade) => (
+                  <option key={grade} value={grade}>
+                    {grade}
                   </option>
                 ))}
               </NativeSelect>
-            </div>
-            <NativeSelect name="grade" defaultValue={params.grade ?? ""} aria-label="学年">
-              <option value="">すべての学年</option>
-              {gradeOptions.map((grade) => (
-                <option key={grade} value={grade}>
-                  {grade}
-                </option>
-              ))}
-            </NativeSelect>
-            <NativeSelect
-              name="course_id"
-              defaultValue={params.course_id ?? ""}
-              aria-label="コース"
-            >
-              <option value="">すべてのコース</option>
-              {courses.map((course) => (
-                <option key={course.course_id} value={course.course_id}>
-                  {normalizeCourseName(course.course_name)}
-                </option>
-              ))}
-            </NativeSelect>
-            <NativeSelect
-              name="weekday"
-              defaultValue={params.weekday ?? ""}
-              aria-label="曜日"
-            >
-              <option value="">すべての曜日</option>
-              {weekdayOptions.map((weekday) => (
-                <option key={weekday} value={weekday}>
-                  {weekday}曜日
-                </option>
-              ))}
-            </NativeSelect>
-            <NativeSelect name="year" defaultValue={params.year ?? ""} aria-label="年">
-              <option value="">すべての年</option>
-              {years.map((year) => (
-                <option key={year} value={year}>
-                  {year}年
-                </option>
-              ))}
-            </NativeSelect>
-            <Input
-              name="from"
-              type="date"
-              defaultValue={params.from ?? ""}
-              aria-label="開始日"
-            />
-            <Input
-              name="to"
-              type="date"
-              defaultValue={params.to ?? ""}
-              aria-label="終了日"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground">グループ化</span>
               <NativeSelect
-                name="group"
-                defaultValue={group}
-                aria-label="グループ化"
-                className="h-8 w-auto text-sm"
+                name="course_id"
+                defaultValue={params.course_id ?? ""}
+                aria-label="コース"
               >
+                <option value="">すべてのコース</option>
+                {courses.map((course) => (
+                  <option key={course.course_id} value={course.course_id}>
+                    {normalizeCourseName(course.course_name)}
+                  </option>
+                ))}
+              </NativeSelect>
+              <NativeSelect name="year" defaultValue={params.year ?? ""} aria-label="年">
+                <option value="">すべての年</option>
+                {years.map((year) => (
+                  <option key={year} value={year}>
+                    {year}年
+                  </option>
+                ))}
+              </NativeSelect>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
+                <CalendarRange className="h-4 w-4 shrink-0" />
+                <Input name="from" type="date" defaultValue={params.from ?? ""} aria-label="開始日" />
+                <span>〜</span>
+                <Input name="to" type="date" defaultValue={params.to ?? ""} aria-label="終了日" />
+              </div>
+              <NativeSelect name="group" defaultValue={group} aria-label="グループ化">
                 {GROUP_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
                 ))}
               </NativeSelect>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground">並び替え</span>
-              <NativeSelect
-                name="sort"
-                defaultValue={sort}
-                aria-label="並び替え"
-                className="h-8 w-auto text-sm"
-              >
+              <NativeSelect name="sort" defaultValue={sort} aria-label="並び替え">
                 {lessonRecordSortOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -313,121 +416,163 @@ export default async function LessonRecordsPage({
                 ))}
               </NativeSelect>
             </div>
-            <Button type="submit" variant="outline" size="sm" className="ml-auto">
-              絞り込み
+            <input type="hidden" name="page" value="1" />
+            <Button type="submit" variant="outline" size="sm">
+              この条件で絞り込み
             </Button>
-          </div>
-        </form>
+          </form>
+        </details>
 
-        {/* 一覧 */}
+        {/* リスト */}
         {sortedRecords.length === 0 ? (
-          <EmptyState>条件に一致する授業記録がありません。</EmptyState>
+          <EmptyState>条件に一致する記録がありません。</EmptyState>
         ) : groups ? (
-          <div className="space-y-6">
+          <div className="space-y-8">
+            {totalCount > 80 && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                グループ表示は条件に一致する記録をすべて表示します。件数が多いときは、詳細条件で「一覧のみ」にしてページ送りを使うと読みやすいです。
+              </p>
+            )}
             {groups.map(([groupKey, recs]) => (
-              <section key={groupKey} className="space-y-2">
-                <div className="flex items-baseline gap-3 border-b pb-2">
-                  <h2 className="text-sm font-semibold">{groupKey}</h2>
-                  <span className="text-xs text-muted-foreground">{recs.length}件</span>
-                </div>
-                <RecordTable records={recs} />
+              <section key={groupKey} className="space-y-3">
+                <h2 className="flex items-baseline gap-2 border-b pb-2 text-sm font-semibold">
+                  {groupKey}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {recs.length}件
+                  </span>
+                </h2>
+                <RecordCardList records={recs} />
               </section>
             ))}
           </div>
         ) : (
-          <RecordTable records={sortedRecords} />
+          <>
+            <RecordCardList
+              records={sortedRecords.slice(pageOffset, pageOffset + PAGE_SIZE)}
+            />
+            {totalPages > 1 && (
+              <Pagination
+                safePage={safePage}
+                totalPages={totalPages}
+                preserved={preserved}
+              />
+            )}
+          </>
         )}
       </div>
     </AppShell>
   );
 }
 
-function RecordTable({ records }: { records: LessonRecord[] }) {
+function Pagination({
+  safePage,
+  totalPages,
+  preserved
+}: {
+  safePage: number;
+  totalPages: number;
+  preserved: Record<string, string | undefined>;
+}) {
+  const prev =
+    safePage > 1 ? buildListQuery(preserved, { page: String(safePage - 1) }) : null;
+  const next =
+    safePage < totalPages ? buildListQuery(preserved, { page: String(safePage + 1) }) : null;
+
   return (
-    <div className="overflow-hidden rounded-md border">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] text-sm">
-          <thead className="bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 text-left font-medium">日付</th>
-              <th className="px-3 py-2 text-left font-medium">時間</th>
-              <th className="px-3 py-2 text-left font-medium">生徒</th>
-              <th className="px-3 py-2 text-left font-medium">学年</th>
-              <th className="px-3 py-2 text-left font-medium">コース</th>
-              <th className="px-3 py-2 text-left font-medium">出欠</th>
-              <th className="px-3 py-2 text-left font-medium">内容</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {records.map((record) => {
-              const courseName = normalizeCourseName(record.courses?.course_name);
-              const dotColor = COURSE_DOT[courseName] ?? "bg-gray-300";
-              return (
-                <tr key={record.lesson_record_id} className="hover:bg-muted/30">
-                  <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-muted-foreground">
-                    {formatDate(record.lesson_date)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 align-top font-mono text-xs text-muted-foreground">
-                    {formatTime(record.start_time)}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    {record.students ? (
-                      <Link
-                        href={`/students/${record.students.student_id}`}
-                        className="font-medium hover:text-primary hover:underline"
-                      >
-                        {fullName(record.students)}
-                      </Link>
-                    ) : (
-                      "-"
-                    )}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-muted-foreground">
-                    {record.students?.grade ? formatGrade(record.students.grade) : "-"}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <span className="inline-flex items-center gap-1.5 text-xs">
-                      <span
-                        className={`h-1.5 w-1.5 rounded-full ${dotColor}`}
-                        aria-hidden
-                      />
-                      {courseName || "-"}
+    <nav className="flex items-center justify-between border-t pt-4 text-sm">
+      {prev ? (
+        <Button asChild variant="outline" size="sm">
+          <Link href={prev}>前へ</Link>
+        </Button>
+      ) : (
+        <span className="text-muted-foreground">前へ</span>
+      )}
+      <span className="text-xs text-muted-foreground">
+        {safePage} / {totalPages}
+      </span>
+      {next ? (
+        <Button asChild variant="outline" size="sm">
+          <Link href={next}>次へ</Link>
+        </Button>
+      ) : (
+        <span className="text-muted-foreground">次へ</span>
+      )}
+    </nav>
+  );
+}
+
+function RecordCardList({ records }: { records: LessonRecord[] }) {
+  return (
+    <ul className="space-y-2">
+      {records.map((record) => {
+        const courseName = normalizeCourseName(record.courses?.course_name);
+        const dotColor = COURSE_DOT[courseName] ?? "bg-gray-400";
+        const wd = weekdayFromDate(record.lesson_date);
+        const title =
+          emptyText(record.title) === "-" ? "（目的未記入）" : emptyText(record.title);
+
+        return (
+          <li key={record.lesson_record_id}>
+            <Link
+              href={`/lesson-records/${record.lesson_record_id}`}
+              className="flex gap-4 rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/35 hover:bg-muted/25"
+            >
+              <div className="flex w-[76px] shrink-0 flex-col gap-0.5 border-r border-border/60 pr-4">
+                {wd && (
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {wd}
+                  </span>
+                )}
+                <span className="text-sm font-semibold tabular-nums">
+                  {formatDate(record.lesson_date)}
+                </span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  {formatTime(record.start_time)}
+                </span>
+              </div>
+
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  {record.students ? (
+                    <span className="font-medium">{fullName(record.students)}</span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                  {record.students?.grade && (
+                    <span className="text-xs text-muted-foreground">
+                      {formatGrade(record.students.grade)}
                     </span>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    {record.attendance_status ? (
-                      <span
-                        className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-medium ${
-                          ATTENDANCE_COLORS[record.attendance_status] ?? ""
-                        }`}
-                      >
-                        {ATTENDANCE_LABELS[record.attendance_status] ?? record.attendance_status}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">-</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <Link
-                      href={`/lesson-records/${record.lesson_record_id}`}
-                      className="block group"
+                  )}
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/80 px-2 py-0.5 text-xs">
+                    <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} aria-hidden />
+                    {courseName || "—"}
+                  </span>
+                  {record.attendance_status ? (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                        ATTENDANCE_COLORS[record.attendance_status] ?? "bg-muted text-muted-foreground"
+                      }`}
                     >
-                      <div className="line-clamp-1 font-medium group-hover:text-primary group-hover:underline">
-                        {emptyText(record.title) === "-"
-                          ? "（目的未記入）"
-                          : emptyText(record.title)}
-                      </div>
-                      <div className="line-clamp-1 text-xs text-muted-foreground">
-                        {previewText(record.content, 80)}
-                      </div>
-                    </Link>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
+                      {ATTENDANCE_LABELS[record.attendance_status] ?? record.attendance_status}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">下書き</span>
+                  )}
+                </div>
+                <p className="text-sm font-medium leading-snug">{title}</p>
+                <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                  {previewText(record.content, 140)}
+                </p>
+              </div>
+
+              <ChevronRight
+                className="mt-1 h-5 w-5 shrink-0 text-muted-foreground/40"
+                aria-hidden
+              />
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

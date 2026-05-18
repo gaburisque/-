@@ -47,6 +47,10 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
+**ローカル開発では本番 Supabase を指さないでください。** URL のホスト名（`xxxx.supabase.co` の `xxxx`）が本番プロジェクトと一致していると、`npm run dev` でも本番データを読み書きします。検証用プロジェクトを用意し、その **Project URL** と **anon key** を `.env.local` に設定してください。本番に戻す前に必ず値を確認すること。
+
+複数環境を切り替える場合は、`.env.local` をコピーして `.env.local.production` のように別名で保管し、作業前にリネームまたは `NEXT_PUBLIC_SUPABASE_URL` だけ差し替えると安全です。
+
 ### 4. adminアカウントを作成
 
 1. Supabase Dashboard → **Authentication → Users → Add user** でオーナー用メールを登録
