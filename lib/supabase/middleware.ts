@@ -39,7 +39,8 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/attendance") ||
     request.nextUrl.pathname.startsWith("/documents") ||
     request.nextUrl.pathname.startsWith("/courses") ||
-    request.nextUrl.pathname.startsWith("/staff");
+    request.nextUrl.pathname.startsWith("/staff") ||
+    request.nextUrl.pathname.startsWith("/settings");
 
   if (!user && isProtectedRoute) {
     const url = request.nextUrl.clone();
@@ -50,7 +51,7 @@ export async function updateSession(request: NextRequest) {
 
   if (user && isLoginPage) {
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    url.pathname = "/lesson-records/new";
     return NextResponse.redirect(url);
   }
 

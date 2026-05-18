@@ -1,13 +1,9 @@
 import Link from "next/link";
 import {
   BookOpen,
-  CalendarCheck,
   ClipboardList,
-  FileStack,
-  GraduationCap,
-  LayoutDashboard,
   LogOut,
-  UserCog,
+  Settings,
   Users
 } from "lucide-react";
 
@@ -16,13 +12,9 @@ import { Button } from "@/components/ui/button";
 import { APP_NAME } from "@/lib/branding";
 
 const navItems = [
-  { href: "/dashboard", label: "ダッシュボード", icon: LayoutDashboard },
+  { href: "/lesson-records/new", label: "記録", icon: ClipboardList },
   { href: "/students", label: "生徒", icon: Users },
-  { href: "/lesson-records", label: "授業記録", icon: ClipboardList },
-  { href: "/attendance", label: "出席", icon: CalendarCheck },
-  { href: "/courses", label: "コース", icon: GraduationCap },
-  { href: "/documents", label: "教材", icon: FileStack },
-  { href: "/staff", label: "スタッフ", icon: UserCog }
+  { href: "/settings", label: "設定", icon: Settings }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -30,7 +22,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen">
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-          <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
+          <Link href="/lesson-records/new" className="flex items-center gap-2 font-semibold">
             <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <BookOpen className="h-5 w-5" />
             </span>
@@ -44,7 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </form>
         </div>
       </header>
-      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[220px_1fr] lg:px-8">
+      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[180px_1fr] lg:px-8">
         <nav className="flex gap-2 overflow-x-auto lg:flex-col lg:overflow-visible">
           {navItems.map((item) => {
             const Icon = item.icon;

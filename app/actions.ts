@@ -223,7 +223,7 @@ export async function signIn(formData: FormData) {
   const supabase = await createClient();
   const email = requiredText(formData, "email");
   const password = requiredText(formData, "password");
-  const next = optionalText(formData, "next") ?? "/dashboard";
+  const next = optionalText(formData, "next") ?? "/lesson-records/new";
 
   const { error } = await supabase.auth
     .signInWithPassword({ email, password })

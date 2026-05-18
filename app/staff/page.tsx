@@ -15,7 +15,7 @@ import { redirect } from "next/navigation";
 export default async function StaffPage() {
   const isAdmin = await isCurrentUserAdmin();
   if (!isAdmin) {
-    redirect("/dashboard");
+    redirect("/settings");
   }
 
   const supabase = await createClient();

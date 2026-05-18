@@ -20,7 +20,7 @@ function LoginForm({
       </CardHeader>
       <CardContent>
         <form action={signIn} className="space-y-4">
-          <input type="hidden" name="next" value={searchParams.next ?? "/dashboard"} />
+          <input type="hidden" name="next" value={searchParams.next ?? "/lesson-records/new"} />
           {searchParams.error ? (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {searchParams.error}
