@@ -11,9 +11,7 @@ export type LessonRecordFormDefaults = Partial<
 
 export function LessonRecordFormFields({ defaults }: { defaults?: LessonRecordFormDefaults }) {
   const d = defaults ?? {};
-  const hasOptional = Boolean(
-    d.typing_tool || d.typing_note || d.lesson_tool || d.excitement_note || d.remarks
-  );
+  const hasOptional = Boolean(d.typing_tool || d.typing_note || d.remarks);
 
   return (
     <div className="space-y-5 md:col-span-2">
@@ -30,6 +28,18 @@ export function LessonRecordFormFields({ defaults }: { defaults?: LessonRecordFo
       </div>
 
       <div className="space-y-1.5">
+        <Label htmlFor="lesson_tool" className="text-sm font-medium">
+          レッスン使用ツール
+        </Label>
+        <Input
+          id="lesson_tool"
+          name="lesson_tool"
+          defaultValue={d.lesson_tool ?? ""}
+          placeholder="例: Scratch 3.0"
+        />
+      </div>
+
+      <div className="space-y-1.5">
         <Label htmlFor="lesson_note" className="text-sm font-medium">
           授業の様子
         </Label>
@@ -39,6 +49,19 @@ export function LessonRecordFormFields({ defaults }: { defaults?: LessonRecordFo
           defaultValue={d.lesson_note ?? ""}
           className="min-h-[200px] resize-y leading-7"
           placeholder="取り組み・理解度・つまずき・集中度・会話の内容など、詳しく記録"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="excitement_note" className="text-sm font-medium">
+          子どもの反応・ワクワクの様子
+        </Label>
+        <Textarea
+          id="excitement_note"
+          name="excitement_note"
+          defaultValue={d.excitement_note ?? ""}
+          className="min-h-[96px] resize-y"
+          placeholder="楽しんでいた点・印象的だった反応など"
         />
       </div>
 
@@ -63,29 +86,18 @@ export function LessonRecordFormFields({ defaults }: { defaults?: LessonRecordFo
           <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
           その他の項目
           <span className="text-xs font-normal text-muted-foreground/70">
-            （タイピング・使用ツール・反応・備考）
+            （タイピング・備考）
           </span>
         </summary>
         <div className="space-y-4 border-t border-border px-4 py-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="typing_tool">タイピング使用ツール</Label>
-              <Input
-                id="typing_tool"
-                name="typing_tool"
-                defaultValue={d.typing_tool ?? ""}
-                placeholder="例: Typing.com"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="lesson_tool">レッスン使用ツール</Label>
-              <Input
-                id="lesson_tool"
-                name="lesson_tool"
-                defaultValue={d.lesson_tool ?? ""}
-                placeholder="例: Scratch 3.0"
-              />
-            </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="typing_tool">タイピング使用ツール</Label>
+            <Input
+              id="typing_tool"
+              name="typing_tool"
+              defaultValue={d.typing_tool ?? ""}
+              placeholder="例: Typing.com"
+            />
           </div>
 
           <div className="space-y-1.5">
@@ -96,17 +108,6 @@ export function LessonRecordFormFields({ defaults }: { defaults?: LessonRecordFo
               defaultValue={d.typing_note ?? ""}
               className="min-h-[72px] resize-y"
               placeholder="スピード・正確さ・集中度など"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="excitement_note">子どもの反応・ワクワクの様子</Label>
-            <Textarea
-              id="excitement_note"
-              name="excitement_note"
-              defaultValue={d.excitement_note ?? ""}
-              className="min-h-[72px] resize-y"
-              placeholder="楽しんでいた点・印象的だった反応など"
             />
           </div>
 
