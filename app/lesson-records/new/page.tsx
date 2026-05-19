@@ -1,16 +1,15 @@
 import Link from "next/link";
-import {
-  ArrowRight,
-  CalendarDays,
-  CheckCircle2,
-  ChevronDown,
-  Circle,
-  Clock3
-} from "lucide-react";
+import { redirect } from "next/navigation";
+import { CalendarDays, CheckCircle2, ChevronDown, Circle, Clock3 } from "lucide-react";
 
 import { addScheduledLessonRecord, saveDraftLessonRecord } from "@/app/actions";
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/empty-state";
+import { FlashToast } from "@/components/flash-toast";
+import type { LessonRecordsStudentSearchOption } from "@/components/lesson-records-student-search";
+
+import { CopyPrevRecordButton } from "./copy-prev-record-button";
+import { LessonRecordsNewStudentPickPanel } from "./lesson-records-new-student-pick-panel";
 import { LessonRecordFormFields } from "@/components/lesson-record-content-fields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,10 +19,23 @@ import { normalizeCourseName } from "@/lib/courses";
 import { dedupeEnrollmentsByStudentCourseTime } from "@/lib/enrollments";
 import { formatDate, formatTime, fullName } from "@/lib/format";
 import { formatGrade } from "@/lib/grades";
+import { lessonTimeSelectOptions } from "@/lib/lesson-times";
+import {
+  buildLessonRecordsNewPath,
+  lessonRecordsNewHrefFromFields,
+  type LessonRecordsNewNavFields
+} from "@/lib/lesson-records-new-url";
 import { one } from "@/lib/relations";
+import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/server";
 import type { Enrollment, LessonRecord, Staff } from "@/lib/types";
-import { parseWeekday, weekdayFromDate, weekdayOptions } from "@/lib/weekdays";
+import {
+  parseWeekday,
+  resolveIsoDateParam,
+  shiftDateToNearestWeekday,
+  weekdayFromDate,
+  weekdayOptions
+} from "@/lib/weekdays";
 
 const COURSE_DOT: Record<string, string> = {
   Scratch: "bg-blue-500",
@@ -46,29 +58,53 @@ const ATTENDANCE_COLORS: Record<string, string> = {
   substitute: "bg-sky-50 text-sky-700 border-sky-200"
 };
 
-function today() {
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(new Date());
-}
-
 export default async function NewLessonRecordPage({
   searchParams
 }: {
-  searchParams: Promise<{ weekday?: string; enrollment_id?: string; date?: string }>;
+  searchParams: Promise<{
+    weekday?: string;
+    enrollment_id?: string;
+    date?: string;
+    student_id?: string;
+    message?: string;
+    only_unrecorded?: string;
+  }>;
 }) {
   const params = await searchParams;
-  const weekday = parseWeekday(params.weekday);
+  const selectedDate = resolveIsoDateParam(params.date);
+  const lessonWeekday = weekdayFromDate(selectedDate);
+  const urlWeekday =
+    params.weekday && weekdayOptions.includes(params.weekday) ? params.weekday : null;
+
+  /** 一覧の曜日フィルターと同じく、「記録する日」のカレンダー曜日を正とする */
+  if (lessonWeekday && urlWeekday && urlWeekday !== lessonWeekday) {
+    redirect(
+      lessonRecordsNewHrefFromFields({
+        weekday: lessonWeekday,
+        date: selectedDate,
+        enrollmentId: params.enrollment_id || undefined
+      })
+    );
+  }
+
+  const weekday = lessonWeekday ?? parseWeekday(params.weekday);
   const selectedEnrollmentId = params.enrollment_id ?? "";
-  const selectedDate = params.date ?? today();
+
+  function navHref(overrides: Partial<LessonRecordsNewNavFields>): string {
+    return lessonRecordsNewHrefFromFields({
+      weekday,
+      date: selectedDate,
+      enrollmentId: selectedEnrollmentId || undefined,
+      studentId: undefined,
+      ...overrides
+    });
+  }
   const supabase = await createClient();
 
   const [
     enrollmentsResult,
     lessonRecordsResult,
+    studentsResult,
     {
       data: { user }
     }
@@ -88,8 +124,14 @@ export default async function NewLessonRecordPage({
       .order("lesson_date", { ascending: false })
       .order("start_time", { ascending: false, nullsFirst: false })
       .limit(2000),
+    supabase
+      .from("students")
+      .select("student_id,last_name,first_name,last_name_kana,first_name_kana,grade")
+      .order("last_name_kana", { ascending: true, nullsFirst: false }),
     supabase.auth.getUser()
   ]);
+
+  const students = (studentsResult.data ?? []) as LessonRecordsStudentSearchOption[];
 
   const staffResult = user
     ? await supabase
@@ -101,6 +143,7 @@ export default async function NewLessonRecordPage({
 
   const allRecords = (lessonRecordsResult.data ?? []) as unknown as LessonRecord[];
 
+  /** 受講ごとに「最新の記録」の曜日（lesson_records は lesson_date 降順で取得済み） */
   const latestLessonWeekdayByStudentCourse = new Map<string, string>();
   for (const record of allRecords) {
     const key = `${record.student_id}:${record.course_id ?? ""}`;
@@ -113,17 +156,53 @@ export default async function NewLessonRecordPage({
   const allEnrollments = dedupeEnrollmentsByStudentCourseTime(
     (enrollmentsResult.data ?? []) as Enrollment[]
   );
-  const visibleEnrollments = allEnrollments.filter((e) => {
+  /** 曜日タブに載せる受講: 直近の記録の曜日を優先。記録が無い受講は enrollments.weekday */
+  const weekdayPoolEnrollments = allEnrollments.filter((e) => {
     const prevWeekday = latestLessonWeekdayByStudentCourse.get(`${e.student_id}:${e.course_id}`);
-    return (prevWeekday ?? e.weekday) === weekday;
+    const bucketWeekday = prevWeekday ?? e.weekday;
+    return bucketWeekday === weekday;
   });
 
+  const onlyUnrecorded = params.only_unrecorded === "1";
+
   const recordsOnDate = allRecords.filter((r) => r.lesson_date === selectedDate);
+
+  // 曜日別の未記録件数（曜日タブのバッジ用）
+  const weekdayUnrecordedCounts = new Map<string, number>(
+    weekdayOptions
+      .filter((w) => w !== "日")
+      .map((w) => {
+        const pool = allEnrollments.filter((e) => {
+          const prev = latestLessonWeekdayByStudentCourse.get(`${e.student_id}:${e.course_id}`);
+          return (prev ?? e.weekday) === w;
+        });
+        const fullyRecorded = new Set(
+          recordsOnDate
+            .filter((r) => r.attendance_status !== null)
+            .map((r) => pool.find((e) => e.student_id === r.student_id && e.course_id === r.course_id)?.enrollment_id)
+            .filter(Boolean) as string[]
+        );
+        return [w, pool.filter((e) => !fullyRecorded.has(e.enrollment_id)).length] as [string, number];
+      })
+  );
+
+  if (params.student_id && !selectedEnrollmentId) {
+    const matches = allEnrollments.filter((e) => e.student_id === params.student_id);
+    if (matches.length === 1) {
+      redirect(
+        lessonRecordsNewHrefFromFields({
+          weekday,
+          date: selectedDate,
+          enrollmentId: matches[0].enrollment_id
+        })
+      );
+    }
+  }
 
   const recordedEnrollmentIds = new Set(
     recordsOnDate
       .map((r) => {
-        const match = visibleEnrollments.find(
+        const match = weekdayPoolEnrollments.find(
           (e) => e.student_id === r.student_id && e.course_id === r.course_id
         );
         return match?.enrollment_id ?? null;
@@ -135,7 +214,7 @@ export default async function NewLessonRecordPage({
     recordsOnDate
       .filter((r) => r.attendance_status === null)
       .map((r) => {
-        const match = visibleEnrollments.find(
+        const match = weekdayPoolEnrollments.find(
           (e) => e.student_id === r.student_id && e.course_id === r.course_id
         );
         return match?.enrollment_id ?? null;
@@ -150,9 +229,10 @@ export default async function NewLessonRecordPage({
     user?.email ??
     "ログイン中の職員";
 
-  const selectedEnrollment = visibleEnrollments.find(
-    (e) => e.enrollment_id === selectedEnrollmentId
-  );
+  const selectedEnrollment =
+    weekdayPoolEnrollments.find((e) => e.enrollment_id === selectedEnrollmentId) ??
+    allEnrollments.find((e) => e.enrollment_id === selectedEnrollmentId);
+  const hasOpenRecordForm = Boolean(selectedEnrollment);
 
   const prevRecord = selectedEnrollment
     ? allRecords.find(
@@ -163,42 +243,16 @@ export default async function NewLessonRecordPage({
       ) ?? null
     : null;
 
-  // 次の未記録生徒
-  const nextEnrollment = (() => {
-    if (!selectedEnrollment) return null;
-    const idx = visibleEnrollments.findIndex(
-      (e) => e.enrollment_id === selectedEnrollmentId
-    );
-    if (idx === -1) return null;
-    for (let i = idx + 1; i < visibleEnrollments.length; i++) {
-      const e = visibleEnrollments[i];
-      if (
-        !recordedEnrollmentIds.has(e.enrollment_id) ||
-        draftEnrollmentIds.has(e.enrollment_id)
-      ) {
-        return e;
-      }
-    }
-    for (let i = 0; i < idx; i++) {
-      const e = visibleEnrollments[i];
-      if (
-        !recordedEnrollmentIds.has(e.enrollment_id) ||
-        draftEnrollmentIds.has(e.enrollment_id)
-      ) {
-        return e;
-      }
-    }
-    return null;
-  })();
-
-  const nextRedirectTo = nextEnrollment
-    ? `/lesson-records/new?weekday=${encodeURIComponent(weekday)}&enrollment_id=${nextEnrollment.enrollment_id}&date=${selectedDate}#record-form`
-    : "";
-
   const recentRecords = allRecords.slice(0, 8);
 
-  const recordedCount = recordedEnrollmentIds.size;
-  const totalToday = visibleEnrollments.length;
+  const recordedCount = recordedEnrollmentIds.size - draftEnrollmentIds.size;
+  const totalToday = weekdayPoolEnrollments.length;
+
+  const displayEnrollments = onlyUnrecorded
+    ? weekdayPoolEnrollments.filter((e) => !recordedEnrollmentIds.has(e.enrollment_id) || draftEnrollmentIds.has(e.enrollment_id))
+    : weekdayPoolEnrollments;
+
+  const unrecordedCount = weekdayPoolEnrollments.length - recordedCount;
 
   const migrationRequired =
     Boolean(enrollmentsResult.error) &&
@@ -206,17 +260,18 @@ export default async function NewLessonRecordPage({
 
   return (
     <AppShell>
+      <FlashToast message={params.message} />
       <div className="space-y-6">
         {/* ヘッダー：曜日 + 日付 + 進捗 */}
         <header className="flex flex-col gap-4">
           <div className="flex items-end justify-between gap-3">
             <div>
               <h1 className="text-xl font-semibold tracking-tight">授業記録</h1>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {formatDate(selectedDate)} ・ {weekday}曜日 ・ {recordedCount}/{totalToday} 件記録済
+              <p className="mt-1 text-xs text-muted-foreground">
+                {formatDate(selectedDate)} ・ {weekday}曜日 ・ 進捗 {recordedCount}/{totalToday}
               </p>
             </div>
-            <form className="flex items-center gap-2">
+            <form className="flex items-center gap-2" action="/lesson-records/new" method="get">
               <input type="hidden" name="weekday" value={weekday} />
               {selectedEnrollmentId && (
                 <input type="hidden" name="enrollment_id" value={selectedEnrollmentId} />
@@ -237,17 +292,30 @@ export default async function NewLessonRecordPage({
           <nav className="flex gap-1 border-b">
             {weekdayOptions.filter((w) => w !== "日").map((w) => {
               const isActive = w === weekday;
+              const tabDate = shiftDateToNearestWeekday(selectedDate, w);
+              const tabUnrecorded = weekdayUnrecordedCounts.get(w) ?? 0;
               return (
                 <Link
                   key={w}
-                  href={`/lesson-records/new?weekday=${encodeURIComponent(w)}&date=${selectedDate}`}
-                  className={`relative px-3 py-2 text-sm font-medium transition-colors ${
+                  href={lessonRecordsNewHrefFromFields({
+                    weekday: w,
+                    date: tabDate,
+                    enrollmentId: selectedEnrollmentId || undefined
+                  })}
+                  className={`relative flex items-center gap-1 px-3 py-2 text-sm font-medium transition-colors ${
                     isActive
                       ? "text-foreground"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {w}
+                  {tabUnrecorded > 0 && (
+                    <span className={`min-w-[1.25rem] rounded-full px-1 py-0.5 text-center text-[10px] leading-none ${
+                      isActive ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    }`}>
+                      {tabUnrecorded}
+                    </span>
+                  )}
                   {isActive && (
                     <span className="absolute inset-x-0 -bottom-px h-0.5 bg-primary" />
                   )}
@@ -267,26 +335,62 @@ export default async function NewLessonRecordPage({
         {/* メイン：左リスト + 右フォーム */}
         <div className="grid gap-6 xl:grid-cols-[300px_1fr]">
           {/* 生徒リスト */}
-          <aside className="space-y-3 xl:sticky xl:top-5 xl:self-start">
+          <aside
+            className={cn(
+              "space-y-3 xl:sticky xl:top-5 xl:self-start",
+              "xl:order-1",
+              hasOpenRecordForm ? "max-xl:order-2" : "max-xl:order-1"
+            )}
+          >
+            <LessonRecordsNewStudentPickPanel
+              key={selectedEnrollmentId || `pick-${weekday}-${selectedDate}`}
+              students={students}
+              allEnrollments={allEnrollments}
+              weekday={weekday}
+              selectedDate={selectedDate}
+              urlStudentId={params.student_id ?? ""}
+              selectedEnrollmentId={selectedEnrollmentId}
+            />
+
             <div className="flex items-center justify-between text-xs">
               <span className="font-medium uppercase tracking-wider text-muted-foreground">
-                {weekday}曜日 / {visibleEnrollments.length}人
+                {weekday}曜 · {totalToday}人
               </span>
-              <div className="flex items-center gap-2 text-muted-foreground">
+              <div className="flex items-center gap-3 text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                  {recordedCount - draftEnrollmentIds.size}
+                  {recordedCount}
                 </span>
                 <span className="flex items-center gap-1">
                   <Clock3 className="h-3 w-3 text-amber-500" />
                   {draftEnrollmentIds.size}
                 </span>
+                <Link
+                  href={buildLessonRecordsNewPath(
+                    { weekday, date: selectedDate, enrollment_id: selectedEnrollmentId || undefined },
+                    { only_unrecorded: onlyUnrecorded ? undefined : "1" }
+                  )}
+                  className={`rounded px-1.5 py-0.5 transition-colors ${
+                    onlyUnrecorded
+                      ? "bg-primary/10 font-semibold text-primary"
+                      : "hover:bg-muted"
+                  }`}
+                >
+                  <Circle className="mr-0.5 inline h-3 w-3 text-muted-foreground/70" />
+                  {unrecordedCount}
+                </Link>
               </div>
             </div>
 
-            {visibleEnrollments.length > 0 ? (
+            {unrecordedCount === 0 && !onlyUnrecorded ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-center text-sm text-emerald-700">
+                全員分の記録が完了しています ✓
+              </div>
+            ) : null}
+
+            {displayEnrollments.length > 0 ? (
               <div className="grid max-h-[calc(100svh-220px)] gap-1 overflow-y-auto pr-1">
-                {visibleEnrollments.map((enrollment) => {
+                {displayEnrollments.map((enrollment) => {
                   const student = one(enrollment.students);
                   const courseName = normalizeCourseName(one(enrollment.courses)?.course_name);
                   const dotColor = COURSE_DOT[courseName] ?? "bg-gray-300";
@@ -298,7 +402,9 @@ export default async function NewLessonRecordPage({
                   return (
                     <Link
                       key={enrollment.enrollment_id}
-                      href={`/lesson-records/new?weekday=${encodeURIComponent(weekday)}&enrollment_id=${enrollment.enrollment_id}&date=${selectedDate}#record-form`}
+                      href={navHref({
+                        enrollmentId: enrollment.enrollment_id
+                      })}
                       className={`group flex items-center gap-2.5 rounded-md border px-2.5 py-2 transition-colors ${
                         isSelected
                           ? "border-primary/40 bg-primary/5"
@@ -334,20 +440,46 @@ export default async function NewLessonRecordPage({
                 })}
               </div>
             ) : (
-              <EmptyState>{weekday}曜日の受講予定がありません。</EmptyState>
+              <EmptyState>
+                <>
+                  {weekday}曜日の受講予定がありません。
+                  {allEnrollments.length > 0 && (
+                    <>
+                      {" "}
+                      <span className="text-muted-foreground">
+                        生徒検索から選ぶと、この曜日に載らない受講でも記録できます。
+                      </span>
+                    </>
+                  )}
+                </>
+              </EmptyState>
             )}
           </aside>
 
           {/* 記録フォーム */}
-          <section id="record-form" className="min-w-0">
+          <section
+            id="record-form"
+            className={cn(
+              "min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100svh-6rem)] xl:overflow-y-auto xl:self-start",
+              "xl:order-2",
+              hasOpenRecordForm ? "max-xl:order-1" : "max-xl:order-2"
+            )}
+          >
             {!selectedEnrollment ? (
               <div className="rounded-lg border border-dashed bg-muted/20 px-6 py-16 text-center text-sm text-muted-foreground">
-                左から生徒を選択してください
+                <p className="font-medium text-foreground">生徒を選んでください</p>
+                <p className="mt-2 text-xs leading-relaxed">
+                  左の<strong className="text-foreground">生徒検索</strong>
+                  または
+                  <strong className="text-foreground">一覧</strong>
+                  から選ぶと、ここに記録フォームが開きます（狭い画面ではフォームが上に表示されます）。
+                </p>
               </div>
             ) : (
               <form
                 key={selectedEnrollmentId}
                 action={addScheduledLessonRecord}
+                data-lesson-record-form
                 className="space-y-6"
               >
                 <input type="hidden" name="enrollment_id" value={selectedEnrollmentId} />
@@ -369,7 +501,7 @@ export default async function NewLessonRecordPage({
 
                 {/* 前回の記録 */}
                 {prevRecord && (
-                  <details className="group rounded-md border bg-muted/30">
+                  <details data-prev-record className="group rounded-md border bg-muted/30">
                     <summary className="flex cursor-pointer select-none items-center gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground">
                       <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
                       前回の記録
@@ -378,7 +510,7 @@ export default async function NewLessonRecordPage({
                       </span>
                       {prevRecord.attendance_status && (
                         <span
-                          className={`ml-auto inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-medium ${
+                          className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-medium ${
                             ATTENDANCE_COLORS[prevRecord.attendance_status] ?? ""
                           }`}
                         >
@@ -408,12 +540,20 @@ export default async function NewLessonRecordPage({
                           <span className="text-xs">{prevRecord.homework}</span>
                         </div>
                       )}
+                      <div className="flex justify-end border-t pt-2">
+                        <CopyPrevRecordButton
+                          title={prevRecord.title}
+                          content={prevRecord.content}
+                          homework={prevRecord.homework}
+                          memo={prevRecord.memo}
+                        />
+                      </div>
                     </div>
                   </details>
                 )}
 
                 {/* 必須項目（出欠・時間） */}
-                <div className="grid gap-4 sm:grid-cols-[200px_1fr_1fr]">
+                <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
                   <div className="space-y-1.5">
                     <Label htmlFor="attendance_status" className="text-sm font-medium">
                       出欠
@@ -434,22 +574,39 @@ export default async function NewLessonRecordPage({
                     <Label htmlFor="start_time" className="text-sm font-medium">
                       開始
                     </Label>
-                    <Input
+                    <NativeSelect
                       id="start_time"
                       name="start_time"
-                      type="time"
                       defaultValue={
                         formatTime(selectedEnrollment.start_time) === "-"
                           ? ""
                           : formatTime(selectedEnrollment.start_time)
                       }
-                    />
+                    >
+                      <option value="">未設定</option>
+                      {lessonTimeSelectOptions(
+                        formatTime(selectedEnrollment.start_time) === "-"
+                          ? undefined
+                          : formatTime(selectedEnrollment.start_time)
+                      ).map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </NativeSelect>
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="end_time" className="text-sm font-medium">
                       終了
                     </Label>
-                    <Input id="end_time" name="end_time" type="time" />
+                    <NativeSelect id="end_time" name="end_time" defaultValue="">
+                      <option value="">未設定</option>
+                      {lessonTimeSelectOptions(undefined).map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </NativeSelect>
                   </div>
                 </div>
 
@@ -460,19 +617,6 @@ export default async function NewLessonRecordPage({
                   <Button type="submit" className="min-w-32">
                     記録を登録
                   </Button>
-
-                  {nextEnrollment && (
-                    <Button
-                      type="submit"
-                      name="redirect_to"
-                      value={nextRedirectTo}
-                      variant="default"
-                      className="min-w-40"
-                    >
-                      保存して次の生徒へ
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  )}
 
                   <Button
                     type="submit"

@@ -1,12 +1,5 @@
 import Link from "next/link";
-import {
-  CalendarRange,
-  ChevronRight,
-  Download,
-  Filter,
-  PenLine,
-  SlidersHorizontal
-} from "lucide-react";
+import { CalendarRange, ChevronRight, Filter, PenLine, SlidersHorizontal } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/empty-state";
@@ -14,7 +7,6 @@ import {
   LessonRecordsStudentSearch,
   type LessonRecordsStudentSearchOption
 } from "@/components/lesson-records-student-search";
-import { MockLessonRecordsButton } from "@/components/mock-lesson-records-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -26,6 +18,7 @@ import {
   parseLessonRecordSort,
   sortLessonRecords
 } from "@/lib/lesson-records";
+import { buildLessonRecordsListPath } from "@/lib/lesson-records-list-url";
 import { createClient } from "@/lib/supabase/server";
 import type { Course, LessonRecord } from "@/lib/types";
 import { weekdayFromDate, weekdayOptions } from "@/lib/weekdays";
@@ -67,19 +60,6 @@ function parseGroup(value: string | undefined): GroupKey {
   return "";
 }
 
-function buildListQuery(
-  base: Record<string, string | undefined>,
-  overrides: Record<string, string | undefined>
-) {
-  const merged = { ...base, ...overrides };
-  const sp = new URLSearchParams();
-  for (const [k, v] of Object.entries(merged)) {
-    if (v !== undefined && v !== "") sp.set(k, v);
-  }
-  const q = sp.toString();
-  return q ? `/lesson-records?${q}` : "/lesson-records";
-}
-
 export default async function LessonRecordsPage({
   searchParams
 }: {
@@ -114,6 +94,15 @@ export default async function LessonRecordsPage({
     group: group || undefined,
     page: undefined as string | undefined
   };
+
+  const listNavBase: Record<string, string> = { sort };
+  if (params.grade) listNavBase.grade = params.grade;
+  if (params.course_id) listNavBase.course_id = params.course_id;
+  if (params.weekday) listNavBase.weekday = params.weekday;
+  if (params.year) listNavBase.year = params.year;
+  if (params.from) listNavBase.from = params.from;
+  if (params.to) listNavBase.to = params.to;
+  if (group) listNavBase.group = group;
 
   const [studentsResult, yearsResult, coursesResult] = await Promise.all([
     supabase
@@ -209,57 +198,46 @@ export default async function LessonRecordsPage({
     });
   })();
 
-  const exportUrl = `/api/lesson-records/export?${new URLSearchParams(
-    Object.fromEntries(
-      Object.entries({
-        student_id: params.student_id,
-        year: params.year,
-        from: params.from,
-        to: params.to
-      }).filter(([, v]) => Boolean(v)) as [string, string][]
-    )
-  ).toString()}`;
-
   const activeFilters: { label: string; href: string }[] = [];
   if (params.student_id) {
     const s = students.find((st) => st.student_id === params.student_id);
     activeFilters.push({
       label: `生徒: ${s ? fullName(s) : params.student_id}`,
-      href: buildListQuery(preserved, { student_id: undefined, page: "1" })
+      href: buildLessonRecordsListPath(preserved, { student_id: undefined, page: "1" })
     });
   }
   if (params.grade)
     activeFilters.push({
       label: `学年: ${params.grade}`,
-      href: buildListQuery(preserved, { grade: undefined, page: "1" })
+      href: buildLessonRecordsListPath(preserved, { grade: undefined, page: "1" })
     });
   if (params.course_id) {
     const c = courses.find((co) => co.course_id === params.course_id);
     activeFilters.push({
       label: `コース: ${c ? normalizeCourseName(c.course_name) : params.course_id}`,
-      href: buildListQuery(preserved, { course_id: undefined, page: "1" })
+      href: buildLessonRecordsListPath(preserved, { course_id: undefined, page: "1" })
     });
   }
   if (params.weekday)
     activeFilters.push({
       label: `${params.weekday}曜`,
-      href: buildListQuery(preserved, { weekday: undefined, page: "1" })
+      href: buildLessonRecordsListPath(preserved, { weekday: undefined, page: "1" })
     });
   if (params.year)
     activeFilters.push({
       label: `${params.year}年`,
-      href: buildListQuery(preserved, { year: undefined, page: "1" })
+      href: buildLessonRecordsListPath(preserved, { year: undefined, page: "1" })
     });
   if (params.from || params.to)
     activeFilters.push({
       label: `期間: ${params.from ?? "…"}〜${params.to ?? "…"}`,
-      href: buildListQuery(preserved, { from: undefined, to: undefined, page: "1" })
+      href: buildLessonRecordsListPath(preserved, { from: undefined, to: undefined, page: "1" })
     });
 
   return (
     <AppShell>
       <div className="mx-auto max-w-4xl space-y-6">
-        <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-4">
+        <header className="border-b pb-4">
           <div className="space-y-1">
             <h1 className="text-xl font-semibold tracking-tight">記録一覧</h1>
             <p className="text-xs text-muted-foreground">
@@ -270,28 +248,13 @@ export default async function LessonRecordsPage({
               {lessonRecordSortOptions.find((o) => o.value === sort)?.label}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {process.env.NODE_ENV === "development" && <MockLessonRecordsButton />}
-            <Button asChild variant="outline" size="sm">
-              <a href={exportUrl} download>
-                <Download className="h-4 w-4" />
-                CSV
-              </a>
-            </Button>
-            <Button asChild size="sm">
-              <Link href="/lesson-records/new">
-                <PenLine className="h-4 w-4" />
-                入力へ
-              </Link>
-            </Button>
-          </div>
         </header>
 
         {/* 曜日クイック */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">曜日</span>
           <Link
-            href={buildListQuery(preserved, { weekday: undefined, page: "1" })}
+            href={buildLessonRecordsListPath(preserved, { weekday: undefined, page: "1" })}
             className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
               !params.weekday
                 ? "bg-primary text-primary-foreground"
@@ -303,7 +266,7 @@ export default async function LessonRecordsPage({
           {weekdayOptions.map((w) => (
             <Link
               key={w}
-              href={buildListQuery(preserved, {
+              href={buildLessonRecordsListPath(preserved, {
                 weekday: w,
                 page: "1"
               })}
@@ -356,6 +319,7 @@ export default async function LessonRecordsPage({
               <LessonRecordsStudentSearch
                 students={students}
                 selectedStudentId={params.student_id}
+                navBase={listNavBase}
               />
               <NativeSelect name="grade" defaultValue={params.grade ?? ""} aria-label="学年">
                 <option value="">すべての学年</option>
@@ -413,6 +377,39 @@ export default async function LessonRecordsPage({
           </form>
         </details>
 
+        {params.student_id ? (
+          <section
+            className="rounded-lg border border-primary/20 bg-primary/[0.06] px-4 py-3 text-sm"
+            aria-labelledby="lesson-records-student-heading"
+          >
+            {(() => {
+              const st = students.find((s) => s.student_id === params.student_id);
+              return st ? (
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <h2 id="lesson-records-student-heading" className="font-semibold tracking-tight">
+                      {fullName(st)}の過去の記録
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      条件に一致する記録は {totalCount} 件です。各行の「編集」から詳細画面で内容を変更できます。
+                    </p>
+                  </div>
+                  <Link
+                    href={`/students/${params.student_id}`}
+                    className="shrink-0 text-xs font-medium text-primary underline underline-offset-4 hover:no-underline"
+                  >
+                    生徒詳細へ
+                  </Link>
+                </div>
+              ) : (
+                <p className="text-muted-foreground">
+                  指定された生徒が見つかりません。フィルターを解除してから選び直してください。
+                </p>
+              );
+            })()}
+          </section>
+        ) : null}
+
         {/* リスト */}
         {sortedRecords.length === 0 ? (
           <EmptyState>条件に一致する記録がありません。</EmptyState>
@@ -431,7 +428,10 @@ export default async function LessonRecordsPage({
                     {recs.length}件
                   </span>
                 </h2>
-                <RecordCardList records={recs} />
+                <RecordCardList
+                  records={recs}
+                  omitStudentName={Boolean(params.student_id)}
+                />
               </section>
             ))}
           </div>
@@ -439,6 +439,7 @@ export default async function LessonRecordsPage({
           <>
             <RecordCardList
               records={sortedRecords.slice(pageOffset, pageOffset + PAGE_SIZE)}
+              omitStudentName={Boolean(params.student_id)}
             />
             {totalPages > 1 && (
               <Pagination
@@ -464,9 +465,9 @@ function Pagination({
   preserved: Record<string, string | undefined>;
 }) {
   const prev =
-    safePage > 1 ? buildListQuery(preserved, { page: String(safePage - 1) }) : null;
+    safePage > 1 ? buildLessonRecordsListPath(preserved, { page: String(safePage - 1) }) : null;
   const next =
-    safePage < totalPages ? buildListQuery(preserved, { page: String(safePage + 1) }) : null;
+    safePage < totalPages ? buildLessonRecordsListPath(preserved, { page: String(safePage + 1) }) : null;
 
   return (
     <nav className="flex items-center justify-between border-t pt-4 text-sm">
@@ -491,7 +492,13 @@ function Pagination({
   );
 }
 
-function RecordCardList({ records }: { records: LessonRecord[] }) {
+function RecordCardList({
+  records,
+  omitStudentName = false
+}: {
+  records: LessonRecord[];
+  omitStudentName?: boolean;
+}) {
   return (
     <ul className="space-y-2">
       {records.map((record) => {
@@ -500,34 +507,39 @@ function RecordCardList({ records }: { records: LessonRecord[] }) {
         const wd = weekdayFromDate(record.lesson_date);
         const title =
           emptyText(record.title) === "-" ? "（目的未記入）" : emptyText(record.title);
+        const detailHref = `/lesson-records/${record.lesson_record_id}`;
 
         return (
-          <li key={record.lesson_record_id}>
+          <li
+            key={record.lesson_record_id}
+            className="flex overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-primary/35"
+          >
             <Link
-              href={`/lesson-records/${record.lesson_record_id}`}
-              className="flex gap-4 rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/35 hover:bg-muted/25"
+              href={detailHref}
+              className="flex min-w-0 flex-1 gap-3 p-4 transition-colors hover:bg-muted/25 sm:gap-4"
             >
-              <div className="flex w-[76px] shrink-0 flex-col gap-0.5 border-r border-border/60 pr-4">
+              <div className="flex w-[4.5rem] shrink-0 flex-col gap-0.5 border-r border-border/60 pr-3 sm:w-[5.25rem] sm:pr-4">
                 {wd && (
                   <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     {wd}
                   </span>
                 )}
-                <span className="text-sm font-semibold tabular-nums">
-                  {formatDate(record.lesson_date)}
+                <span className="break-words text-[11px] font-semibold leading-snug tabular-nums [overflow-wrap:anywhere] sm:text-xs">
+                  {formatDate(record.lesson_date).replace(/\//g, "/\u200b")}
                 </span>
-                <span className="font-mono text-xs text-muted-foreground">
+                <span className="font-mono text-[11px] text-muted-foreground sm:text-xs">
                   {formatTime(record.start_time)}
                 </span>
               </div>
 
               <div className="min-w-0 flex-1 space-y-2">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  {record.students ? (
-                    <span className="font-medium">{fullName(record.students)}</span>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
+                  {!omitStudentName &&
+                    (record.students ? (
+                      <span className="font-medium">{fullName(record.students)}</span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    ))}
                   {record.students?.grade && (
                     <span className="text-xs text-muted-foreground">
                       {formatGrade(record.students.grade)}
@@ -540,7 +552,8 @@ function RecordCardList({ records }: { records: LessonRecord[] }) {
                   {record.attendance_status ? (
                     <span
                       className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                        ATTENDANCE_COLORS[record.attendance_status] ?? "bg-muted text-muted-foreground"
+                        ATTENDANCE_COLORS[record.attendance_status] ??
+                        "bg-muted text-muted-foreground"
                       }`}
                     >
                       {ATTENDANCE_LABELS[record.attendance_status] ?? record.attendance_status}
@@ -556,10 +569,20 @@ function RecordCardList({ records }: { records: LessonRecord[] }) {
               </div>
 
               <ChevronRight
-                className="mt-1 h-5 w-5 shrink-0 text-muted-foreground/40"
+                className="mt-1 h-5 w-5 shrink-0 self-center text-muted-foreground/40"
                 aria-hidden
               />
             </Link>
+
+            <div className="flex w-[5.75rem] shrink-0 border-l border-border/60 bg-muted/10">
+              <Link
+                href={detailHref}
+                className="flex min-h-[4.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-1.5 px-3 py-4 text-xs font-medium text-primary hover:bg-muted/50 active:bg-muted/70 sm:min-h-0 sm:flex-1 sm:py-6"
+              >
+                <PenLine className="h-4 w-4 shrink-0" aria-hidden />
+                編集
+              </Link>
+            </div>
           </li>
         );
       })}

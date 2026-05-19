@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { isCurrentUserAdmin } from "@/lib/authz";
+import { assertCurrentUserIsAdmin, isCurrentUserAdmin } from "@/lib/authz";
 import { nextGrade, normalizeGrade } from "@/lib/grades";
 import {
   buildLessonRecordContent,
@@ -11,6 +11,13 @@ import {
   structuredLessonContent
 } from "@/lib/lesson-record-content";
 import { createClient } from "@/lib/supabase/server";
+import {
+  createStaffAdminClient,
+  STAFF_LOGIN_BAN_DURATION
+} from "@/lib/staff-auth-admin";
+import { lessonRecordsNewHrefFromFields } from "@/lib/lesson-records-new-url";
+import { createServiceRoleClient } from "@/lib/supabase/service-role";
+import { resolveIsoDateParam, weekdayFromDate } from "@/lib/weekdays";
 
 function optionalText(formData: FormData, key: string) {
   const value = String(formData.get(key) ?? "").trim();
@@ -23,178 +30,6 @@ function requiredText(formData: FormData, key: string) {
     throw new Error(`${key} is required.`);
   }
   return value;
-}
-
-const mockCourses = [
-  {
-    course_id: "00000000-0000-4000-8000-000000000201",
-    course_name: "Scratch",
-    description: "ブロックプログラミング",
-    status: "active"
-  },
-  {
-    course_id: "00000000-0000-4000-8000-000000000202",
-    course_name: "Roblox",
-    description: "Roblox Studio による制作",
-    status: "active"
-  },
-  {
-    course_id: "00000000-0000-4000-8000-000000000203",
-    course_name: "ITオンライン部",
-    description: "オンライン IT 学習",
-    status: "active"
-  },
-  {
-    course_id: "00000000-0000-4000-8000-000000000204",
-    course_name: "イラスト",
-    description: "デジタルイラスト",
-    status: "active"
-  }
-];
-
-const mockStudentSeeds = [
-  ["青木", "奏太", "あおき", "そうた", "小4", "月", "15:00", 0],
-  ["石田", "結衣", "いしだ", "ゆい", "小5", "火", "16:00", 1],
-  ["上田", "湊", "うえだ", "みなと", "小6", "水", "17:00", 2],
-  ["遠藤", "莉子", "えんどう", "りこ", "中1", "木", "18:00", 3],
-  ["小川", "悠真", "おがわ", "ゆうま", "中2", "金", "19:00", 0],
-  ["加藤", "紗奈", "かとう", "さな", "中3", "土", "14:00", 1],
-  ["木村", "大翔", "きむら", "ひろと", "小3", "月", "16:00", 2],
-  ["近藤", "美月", "こんどう", "みつき", "小6", "火", "17:00", 3],
-  ["齋藤", "陸", "さいとう", "りく", "中1", "水", "18:00", 0],
-  ["高橋", "杏", "たかはし", "あん", "中2", "木", "19:00", 1],
-  ["中村", "陽菜", "なかむら", "ひな", "高1", "金", "18:00", 2],
-  ["森", "蓮", "もり", "れん", "高2", "土", "15:00", 3]
-] as const;
-
-const weekdayToDow: Record<string, number> = {
-  日: 0,
-  月: 1,
-  火: 2,
-  水: 3,
-  木: 4,
-  金: 5,
-  土: 6
-};
-
-function mockUuid(prefix: string, n: number) {
-  return `${prefix}-0000-4000-8000-${String(n).padStart(12, "0")}`;
-}
-
-function mockLessonRecordUuid(studentIndex: number, weekOffset: number) {
-  return `20000002-${String(weekOffset).padStart(4, "0")}-4000-8000-${String(studentIndex).padStart(12, "0")}`;
-}
-
-function formatDateForDb(date: Date) {
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(date);
-}
-
-function previousLessonDateForWeekday(weekday: string, weekOffset: number) {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const targetDow = weekdayToDow[weekday] ?? 1;
-  const diff = (today.getDay() - targetDow + 7) % 7;
-  today.setDate(today.getDate() - diff - weekOffset * 7);
-  return formatDateForDb(today);
-}
-
-function addMinutes(time: string, minutes: number) {
-  const [hour, minute] = time.split(":").map(Number);
-  const date = new Date(2000, 0, 1, hour, minute + minutes);
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
-function mockLessonTitle(courseName: string, weekOffset: number) {
-  const titles: Record<string, string[]> = {
-    Scratch: [
-      "変数ブロックでスコアを作ろう",
-      "クローンで敵キャラを複製しよう",
-      "当たり判定でゲームオーバーを実装",
-      "スタート画面と画面切り替え",
-      "リストを使った単語ゲーム",
-      "ペンブロックでお絵かき機能"
-    ],
-    Roblox: [
-      "地形ツールで島を作る",
-      "Luaスクリプトの基礎",
-      "アイテム収集システムの実装",
-      "NPCの巡回AIを作る",
-      "ゲームUIとスコア表示",
-      "Publish前の動作確認"
-    ],
-    ITオンライン部: [
-      "タイピングとホームポジション",
-      "HTMLで自己紹介ページ",
-      "CSSで色と余白を整える",
-      "フォームとボタンの基礎",
-      "Pythonの変数と計算",
-      "小さなWebページ制作"
-    ],
-    イラスト: [
-      "線画練習と基本の形",
-      "色塗りの基礎",
-      "レイヤーを使った作画",
-      "キャラクターデザイン",
-      "背景イラストに挑戦",
-      "作品の仕上げ"
-    ]
-  };
-
-  const courseTitles = titles[courseName] ?? titles.Scratch;
-  return courseTitles[weekOffset % courseTitles.length];
-}
-
-function mockLessonContent(courseName: string, title: string, n: number, weekOffset: number) {
-  if (courseName === "イラスト") {
-    return structuredLessonContent([
-      ["今日の目的", title],
-      ["レッスン使用ツール", "Clip Studio Paint"],
-      [
-        "レッスンの様子",
-        ["線を丁寧に引けていた。形の取り方も安定してきた。", "色の組み合わせを楽しみながら進めていた。", "構図を何度も試しながら粘り強く描いていた。"][
-          (n + weekOffset) % 3
-        ]
-      ],
-      [
-        "今日のワクワクの様子",
-        ["完成が近づいて嬉しそうだった。", "次は背景も描きたいと話していた。", "自分の作品を大切そうに見返していた。"][
-          weekOffset % 3
-        ]
-      ]
-    ]);
-  }
-
-  const lessonTool =
-    courseName === "Scratch" ? "Scratch 3.0" : courseName === "Roblox" ? "Roblox Studio" : "VS Code / ブラウザ";
-
-  return structuredLessonContent([
-    ["今日の目的", title],
-    ["タイピング使用ツール", ["Typing.com", "Keybr", "e-Typing"][(n + weekOffset) % 3]],
-    [
-      "タイピングの様子",
-      ["集中して取り組めていた。", "ホームポジションを意識できていた。", "前回よりミスが減っていた。"][
-        weekOffset % 3
-      ]
-    ],
-    ["レッスン使用ツール", lessonTool],
-    [
-      "レッスンの様子",
-      ["積極的に質問しながら進められた。", "少し詰まったが自分で修正できた。", "前回の内容を覚えていてスムーズだった。"][
-        (n + weekOffset) % 3
-      ]
-    ],
-    [
-      "今日のワクワクの様子",
-      ["完成したものを何度も動かして喜んでいた。", "自分でアレンジを加えて楽しんでいた。", "友達に見せたいと話していた。"][
-        weekOffset % 3
-      ]
-    ]
-  ]);
 }
 
 async function ensureCurrentStaffId(supabase: Awaited<ReturnType<typeof createClient>>) {
@@ -258,8 +93,88 @@ export async function signOut() {
   redirect("/login");
 }
 
-export async function createStudent(formData: FormData) {
+export async function updateOwnPassword(formData: FormData) {
+  const base = "/settings/account";
   const supabase = await createClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user?.email) {
+    redirect(`${base}?error=${encodeURIComponent("ログインが必要です。")}`);
+  }
+
+  const currentPassword = String(formData.get("current_password") ?? "").trim();
+  const newPassword = String(formData.get("new_password") ?? "").trim();
+  const confirmPassword = String(formData.get("confirm_password") ?? "").trim();
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    redirect(`${base}?error=${encodeURIComponent("すべての項目を入力してください。")}`);
+  }
+  if (newPassword !== confirmPassword) {
+    redirect(`${base}?error=${encodeURIComponent("新しいパスワードが一致しません。")}`);
+  }
+  if (newPassword.length < 8) {
+    redirect(`${base}?error=${encodeURIComponent("新しいパスワードは8文字以上にしてください。")}`);
+  }
+
+  const { error: signErr } = await supabase.auth.signInWithPassword({
+    email: user.email,
+    password: currentPassword
+  });
+  if (signErr) {
+    redirect(`${base}?error=${encodeURIComponent("現在のパスワードが正しくありません。")}`);
+  }
+
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) {
+    redirect(`${base}?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath(base);
+  redirect(`${base}?message=${encodeURIComponent("パスワードを更新しました。")}`);
+}
+
+export async function updateOwnEmail(formData: FormData) {
+  void formData;
+  redirect(
+    `/settings/account?error=${encodeURIComponent(
+      "ログイン用メールアドレスは変更できません。管理者にお問い合わせください。"
+    )}`
+  );
+}
+
+async function resolveSchoolIdFromSchoolName(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  schoolNameRaw: string | null | undefined
+): Promise<string | null> {
+  const trimmed = schoolNameRaw?.trim() ?? "";
+  if (!trimmed) return null;
+
+  const { data: existing } = await supabase
+    .from("schools")
+    .select("school_id")
+    .eq("school_name", trimmed)
+    .maybeSingle();
+
+  if (existing?.school_id) return existing.school_id;
+
+  const { data: created, error } = await supabase
+    .from("schools")
+    .insert({ school_name: trimmed })
+    .select("school_id")
+    .single();
+
+  if (error) throw error;
+  return created.school_id;
+}
+
+export async function createStudent(formData: FormData) {
+  await assertCurrentUserIsAdmin();
+
+  const supabase = await createClient();
+
+  const schoolId = await resolveSchoolIdFromSchoolName(supabase, optionalText(formData, "school_name"));
 
   const { data, error } = await supabase
     .from("students")
@@ -269,9 +184,9 @@ export async function createStudent(formData: FormData) {
       last_name_kana: optionalText(formData, "last_name_kana"),
       first_name_kana: optionalText(formData, "first_name_kana"),
       grade: normalizeGrade(optionalText(formData, "grade")),
-      school_id: optionalText(formData, "school_id"),
+      school_id: schoolId,
       birth_date: optionalText(formData, "birth_date"),
-      gender: optionalText(formData, "gender"),
+      gender: optionalText(formData, "gender") || null,
       phone: optionalText(formData, "phone"),
       email: optionalText(formData, "email"),
       notes: optionalText(formData, "notes")
@@ -281,39 +196,146 @@ export async function createStudent(formData: FormData) {
 
   if (error) throw error;
 
+  const studentId = data.student_id;
+
+  const gLast = optionalText(formData, "guardian_last_name");
+  const gFirst = optionalText(formData, "guardian_first_name");
+  const gRel = optionalText(formData, "relationship");
+  const gPhone = optionalText(formData, "guardian_phone");
+  const gEmail = optionalText(formData, "guardian_email");
+  const wantsGuardian = Boolean(
+    gLast ||
+      gFirst ||
+      gRel ||
+      gPhone ||
+      gEmail ||
+      formData.get("guardian_is_primary") === "on"
+  );
+  if (wantsGuardian) {
+    if (!gLast || !gFirst || !gRel) {
+      throw new Error("保護者を登録する場合は、姓・名・続柄を入力してください。");
+    }
+    const { error: gErr } = await supabase.from("guardians").insert({
+      student_id: studentId,
+      last_name: gLast,
+      first_name: gFirst,
+      relationship: gRel,
+      phone: gPhone,
+      email: gEmail,
+      is_primary: formData.get("guardian_is_primary") === "on"
+    });
+    if (gErr) throw gErr;
+  }
+
+  const cName = optionalText(formData, "contact_name");
+  const cRel = optionalText(formData, "contact_relationship");
+  const cPhone = optionalText(formData, "contact_phone");
+  const wantsContact = Boolean(cName || cRel || cPhone);
+  if (wantsContact) {
+    if (!cName || !cPhone) {
+      throw new Error("緊急連絡先を登録する場合は、氏名と電話を入力してください。");
+    }
+    const rawPri = Number(formData.get("contact_priority") ?? 1);
+    const priority = Number.isFinite(rawPri) && rawPri > 0 ? Math.floor(rawPri) : 1;
+    const { error: cErr } = await supabase.from("emergency_contacts").insert({
+      student_id: studentId,
+      name: cName,
+      relationship: cRel,
+      phone: cPhone,
+      priority
+    });
+    if (cErr) throw cErr;
+  }
+
+  const courseId = optionalText(formData, "course_id");
+  if (courseId) {
+    const weekday = optionalText(formData, "weekday");
+    const startTime = optionalText(formData, "enrollment_start_time");
+    let scheduleLabel: string | null = null;
+    if (weekday && startTime) {
+      scheduleLabel = `${weekday} ${startTime}`;
+    } else if (weekday) {
+      scheduleLabel = weekday;
+    }
+
+    const { error: eErr } = await supabase.from("enrollments").insert({
+      student_id: studentId,
+      course_id: courseId,
+      schedule_label: scheduleLabel,
+      weekday,
+      start_time: startTime || null,
+      frequency: optionalText(formData, "enrollment_frequency") ?? "weekly",
+      start_date: optionalText(formData, "enrollment_start_date"),
+      status: "active"
+    });
+    if (eErr) throw eErr;
+  }
+
   revalidatePath("/students");
-  redirect(`/students/${data.student_id}`);
+  revalidatePath(`/students/${studentId}`);
+  revalidatePath("/lesson-records/new");
+  revalidatePath("/schedule");
+  redirect(`/students/${studentId}?message=${encodeURIComponent("生徒を登録しました。")}`);
 }
 
 export async function updateStudent(formData: FormData) {
+  await assertCurrentUserIsAdmin();
+
   const supabase = await createClient();
   const studentId = requiredText(formData, "student_id");
 
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const { data: existing } = await supabase
+    .from("students")
+    .select("last_name,first_name,last_name_kana,first_name_kana,grade,school_id,birth_date,gender,phone,email,status,notes")
+    .eq("student_id", studentId)
+    .single();
+
+  const newValues: Record<string, string | null> = {
+    last_name: requiredText(formData, "last_name"),
+    first_name: requiredText(formData, "first_name"),
+    last_name_kana: optionalText(formData, "last_name_kana"),
+    first_name_kana: optionalText(formData, "first_name_kana"),
+    grade: normalizeGrade(optionalText(formData, "grade")),
+    school_id: optionalText(formData, "school_id"),
+    birth_date: optionalText(formData, "birth_date"),
+    gender: optionalText(formData, "gender"),
+    phone: optionalText(formData, "phone"),
+    email: optionalText(formData, "email"),
+    status: requiredText(formData, "status"),
+    notes: optionalText(formData, "notes")
+  };
+
   const { error } = await supabase
     .from("students")
-    .update({
-      last_name: requiredText(formData, "last_name"),
-      first_name: requiredText(formData, "first_name"),
-      last_name_kana: optionalText(formData, "last_name_kana"),
-      first_name_kana: optionalText(formData, "first_name_kana"),
-      grade: normalizeGrade(optionalText(formData, "grade")),
-      school_id: optionalText(formData, "school_id"),
-      birth_date: optionalText(formData, "birth_date"),
-      gender: optionalText(formData, "gender"),
-      phone: optionalText(formData, "phone"),
-      email: optionalText(formData, "email"),
-      status: requiredText(formData, "status"),
-      notes: optionalText(formData, "notes")
-    })
+    .update(newValues)
     .eq("student_id", studentId);
 
   if (error) throw error;
+
+  if (existing) {
+    const diffs = Object.entries(newValues)
+      .filter(([k, v]) => String(existing[k as keyof typeof existing] ?? "") !== String(v ?? ""))
+      .map(([k, v]) => ({
+        student_id: studentId,
+        changed_by: user?.id ?? null,
+        field_name: k,
+        old_value: String(existing[k as keyof typeof existing] ?? ""),
+        new_value: String(v ?? "")
+      }));
+    if (diffs.length > 0) {
+      await supabase.from("student_change_history").insert(diffs);
+    }
+  }
 
   revalidatePath("/students");
   revalidatePath(`/students/${studentId}`);
 }
 
 export async function addGuardian(formData: FormData) {
+  await assertCurrentUserIsAdmin();
+
   const supabase = await createClient();
   const studentId = requiredText(formData, "student_id");
 
@@ -334,6 +356,8 @@ export async function addGuardian(formData: FormData) {
 }
 
 export async function addEmergencyContact(formData: FormData) {
+  await assertCurrentUserIsAdmin();
+
   const supabase = await createClient();
   const studentId = requiredText(formData, "student_id");
 
@@ -395,44 +419,278 @@ export async function updateEnrollmentSchedule(formData: FormData) {
 }
 
 export async function createStaffProfile(formData: FormData) {
+  const staffUrl = "/staff";
+  const staffErr = (msg: string): never =>
+    redirect(`${staffUrl}?error=${encodeURIComponent(msg)}`);
+
   if (!(await isCurrentUserAdmin())) {
-    throw new Error("権限がありません。");
+    staffErr("権限がありません。");
   }
+
+  const name = String(formData.get("name") ?? "").trim();
+  const role = String(formData.get("role") ?? "").trim();
+  const emailRaw = String(formData.get("email") ?? "").trim();
+  const createLogin = formData.get("create_login") === "on";
+  const initialPassword = String(formData.get("initial_password") ?? "");
+
+  if (!name) staffErr("名前を入力してください。");
+  if (!role) staffErr("権限を選択してください。");
 
   const supabase = await createClient();
 
-  const { error } = await supabase.from("staff").insert({
-    name: requiredText(formData, "name"),
-    email: optionalText(formData, "email"),
-    role: requiredText(formData, "role")
+  if (!createLogin) {
+    const { error } = await supabase.from("staff").insert({
+      name,
+      email: emailRaw.length > 0 ? emailRaw : null,
+      role
+    });
+    if (error) staffErr(error.message);
+
+    revalidatePath(staffUrl);
+    redirect(`${staffUrl}?message=${encodeURIComponent("スタッフを追加しました（ログイン連携なし）。")}`);
+  }
+
+  if (!emailRaw) {
+    staffErr("ログイン用アカウントを作成する場合はメールアドレスが必要です。");
+  }
+  if (initialPassword.length < 8) {
+    staffErr("初回パスワードは8文字以上にしてください。");
+  }
+
+  const adminClient = ((): ReturnType<typeof createServiceRoleClient> => {
+    try {
+      return createServiceRoleClient();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "サーバー設定を確認してください。";
+      staffErr(msg);
+      throw new Error("unreachable");
+    }
+  })();
+
+  const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+    email: emailRaw,
+    password: initialPassword,
+    email_confirm: true
   });
 
-  if (error) throw error;
+  const createdUser = authData?.user ?? null;
+  let userId: string;
+  if (authError || !createdUser) {
+    const raw = authError?.message?.toLowerCase() ?? "";
+    const dup =
+      raw.includes("already") ||
+      raw.includes("registered") ||
+      raw.includes("duplicate") ||
+      authError?.status === 422;
+    staffErr(
+      dup
+        ? "このメールアドレスは既に Authentication に登録されています。別のメールを使うか、既存ユーザーに staff を紐づけてください。"
+        : authError?.message ?? "ログイン用アカウントの作成に失敗しました。"
+    );
+    throw new Error("unreachable");
+  }
+  userId = createdUser.id;
 
-  revalidatePath("/staff");
+  const { error: insertError } = await supabase.from("staff").insert({
+    auth_user_id: userId,
+    name,
+    email: emailRaw,
+    role
+  });
+
+  if (insertError) {
+    await adminClient.auth.admin.deleteUser(userId);
+    staffErr(insertError.message);
+  }
+
+  revalidatePath(staffUrl);
+  redirect(
+    `${staffUrl}?message=${encodeURIComponent(
+      "ログイン用アカウントを作成し、スタッフを追加しました。本人へ初回パスワードを安全な経路で共有してください。"
+    )}`
+  );
 }
 
 export async function updateStaffProfile(formData: FormData) {
+  const staffUrl = "/staff";
+  const staffErr = (msg: string): never =>
+    redirect(`${staffUrl}?error=${encodeURIComponent(msg)}`);
+
   if (!(await isCurrentUserAdmin())) {
-    throw new Error("権限がありません。");
+    staffErr("権限がありません。");
   }
 
   const supabase = await createClient();
   const staffId = requiredText(formData, "staff_id");
+  const name = requiredText(formData, "name");
+  const role = requiredText(formData, "role");
 
-  const { error } = await supabase
+  if (role !== "admin" && role !== "staff") {
+    staffErr("権限の値が不正です。");
+  }
+
+  const { data: existing, error: fetchError } = await supabase
     .from("staff")
-    .update({
-      name: requiredText(formData, "name"),
-      email: optionalText(formData, "email"),
-      role: requiredText(formData, "role")
-    })
-    .eq("staff_id", staffId);
+    .select("staff_id, auth_user_id, email")
+    .eq("staff_id", staffId)
+    .maybeSingle();
 
-  if (error) throw error;
+  if (fetchError || !existing) {
+    staffErr("スタッフが見つかりません。");
+    throw new Error("unreachable");
+  }
 
-  revalidatePath("/staff");
+  const patch: { name: string; role: string; email?: string | null } = { name, role };
+
+  if (!existing.auth_user_id) {
+    patch.email = optionalText(formData, "email");
+  }
+
+  const { data: existingFull } = await supabase
+    .from("staff")
+    .select("name,role,email")
+    .eq("staff_id", staffId)
+    .single();
+
+  const { error } = await supabase.from("staff").update(patch).eq("staff_id", staffId);
+
+  if (error) staffErr(error.message);
+
+  if (existingFull) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const patchRecord = patch as Record<string, string | null | undefined>;
+    const diffs = Object.entries(patchRecord)
+      .filter(([k, v]) => String(existingFull[k as keyof typeof existingFull] ?? "") !== String(v ?? ""))
+      .map(([k, v]) => ({
+        staff_id: staffId,
+        changed_by: user?.id ?? null,
+        field_name: k,
+        old_value: String(existingFull[k as keyof typeof existingFull] ?? ""),
+        new_value: String(v ?? "")
+      }));
+    if (diffs.length > 0) {
+      await supabase.from("staff_change_history").insert(diffs);
+    }
+  }
+
+  revalidatePath(staffUrl);
   revalidatePath("/lesson-records/new");
+  redirect(`${staffUrl}?message=${encodeURIComponent("スタッフ情報を保存しました。")}`);
+}
+
+export async function resetStaffLoginPassword(formData: FormData) {
+  const staffUrl = "/staff";
+  const staffErr = (msg: string): never =>
+    redirect(`${staffUrl}?error=${encodeURIComponent(msg)}`);
+
+  if (!(await isCurrentUserAdmin())) {
+    staffErr("権限がありません。");
+  }
+
+  const staffId = requiredText(formData, "staff_id");
+  const newPassword = String(formData.get("new_password") ?? "").trim();
+  if (newPassword.length < 8) {
+    staffErr("新しいパスワードは8文字以上にしてください。");
+  }
+
+  const supabase = await createClient();
+  const { data: member, error: fetchError } = await supabase
+    .from("staff")
+    .select("staff_id, auth_user_id, name")
+    .eq("staff_id", staffId)
+    .maybeSingle();
+
+  if (fetchError || !member?.auth_user_id) {
+    staffErr("ログイン連携のないスタッフにはパスワードを設定できません。");
+    throw new Error("unreachable");
+  }
+
+  const authUserId = member.auth_user_id;
+  const memberName = member.name;
+
+  let adminClient: ReturnType<typeof createStaffAdminClient>;
+  try {
+    adminClient = createStaffAdminClient();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "サーバー設定を確認してください。";
+    staffErr(msg);
+    throw new Error("unreachable");
+  }
+
+  const { error } = await adminClient.auth.admin.updateUserById(authUserId, {
+    password: newPassword
+  });
+  if (error) staffErr(error.message);
+
+  revalidatePath(staffUrl);
+  redirect(
+    `${staffUrl}?message=${encodeURIComponent(
+      `${memberName} さんのログインパスワードを再設定しました。新しいパスワードを安全な経路で共有してください。`
+    )}`
+  );
+}
+
+export async function setStaffLoginEnabled(formData: FormData) {
+  const staffUrl = "/staff";
+  const staffErr = (msg: string): never =>
+    redirect(`${staffUrl}?error=${encodeURIComponent(msg)}`);
+
+  if (!(await isCurrentUserAdmin())) {
+    staffErr("権限がありません。");
+  }
+
+  const staffId = requiredText(formData, "staff_id");
+  const enabled = requiredText(formData, "enabled");
+  if (enabled !== "true" && enabled !== "false") {
+    staffErr("操作が不正です。");
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user: currentUser }
+  } = await supabase.auth.getUser();
+
+  const { data: member, error: fetchError } = await supabase
+    .from("staff")
+    .select("staff_id, auth_user_id, name")
+    .eq("staff_id", staffId)
+    .maybeSingle();
+
+  if (fetchError || !member?.auth_user_id) {
+    staffErr("ログイン連携のないスタッフは停止・再開できません。");
+    throw new Error("unreachable");
+  }
+
+  const authUserId = member.auth_user_id;
+  const memberName = member.name;
+
+  if (enabled === "false" && authUserId === currentUser?.id) {
+    staffErr("自分自身のログインは停止できません。");
+    throw new Error("unreachable");
+  }
+
+  let adminClient: ReturnType<typeof createStaffAdminClient>;
+  try {
+    adminClient = createStaffAdminClient();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "サーバー設定を確認してください。";
+    staffErr(msg);
+    throw new Error("unreachable");
+  }
+
+  const { error } = await adminClient.auth.admin.updateUserById(authUserId, {
+    ban_duration: enabled === "true" ? "none" : STAFF_LOGIN_BAN_DURATION
+  });
+  if (error) staffErr(error.message);
+
+  revalidatePath(staffUrl);
+  redirect(
+    `${staffUrl}?message=${encodeURIComponent(
+      enabled === "true"
+        ? `${memberName} さんのログインを再開しました。`
+        : `${memberName} さんのログインを停止しました。記録者としての表示は残ります。`
+    )}`
+  );
 }
 
 export async function deleteUnlinkedStaffProfiles() {
@@ -638,36 +896,37 @@ export async function addScheduledLessonRecord(formData: FormData) {
     throw enrollmentError ?? new Error("Enrollment not found.");
   }
 
-  const { data, error } = await supabase
-    .from("lesson_records")
-    .insert({
-      student_id: enrollment.student_id,
-      course_id: enrollment.course_id,
-      staff_id: staffId,
-      lesson_date: requiredText(formData, "lesson_date"),
-      start_time: optionalText(formData, "start_time") ?? enrollment.start_time,
-      end_time: optionalText(formData, "end_time"),
-      attendance_status: attendanceStatus || null,
-      title: goal,
-      content: buildLessonRecordContent(contentFields),
-      homework: optionalText(formData, "next_plan"),
-      memo: optionalText(formData, "remarks")
-    })
-    .select("lesson_record_id")
-    .single();
+  const { error } = await supabase.from("lesson_records").insert({
+    student_id: enrollment.student_id,
+    course_id: enrollment.course_id,
+    staff_id: staffId,
+    lesson_date: requiredText(formData, "lesson_date"),
+    start_time: optionalText(formData, "start_time") ?? enrollment.start_time,
+    end_time: optionalText(formData, "end_time"),
+    attendance_status: attendanceStatus || null,
+    title: goal,
+    content: buildLessonRecordContent(contentFields),
+    homework: optionalText(formData, "next_plan"),
+    memo: optionalText(formData, "remarks")
+  });
 
   if (error) throw error;
+
+  const lessonDate = resolveIsoDateParam(requiredText(formData, "lesson_date"));
+  const weekday = weekdayFromDate(lessonDate) ?? "";
 
   revalidatePath("/dashboard");
   revalidatePath("/lesson-records");
   revalidatePath("/lesson-records/new");
   revalidatePath(`/students/${enrollment.student_id}`);
 
-  const redirectTo = optionalText(formData, "redirect_to");
-  if (redirectTo && redirectTo.startsWith("/lesson-records/new")) {
-    redirect(redirectTo);
-  }
-  redirect(`/lesson-records/${data.lesson_record_id}`);
+  redirect(
+    lessonRecordsNewHrefFromFields({
+      weekday,
+      date: lessonDate,
+      message: "記録を保存しました。"
+    })
+  );
 }
 
 export async function saveDraftLessonRecord(formData: FormData) {
@@ -687,35 +946,36 @@ export async function saveDraftLessonRecord(formData: FormData) {
     throw enrollmentError ?? new Error("Enrollment not found.");
   }
 
-  const { data, error } = await supabase
-    .from("lesson_records")
-    .insert({
-      student_id: enrollment.student_id,
-      course_id: enrollment.course_id,
-      staff_id: staffId,
-      lesson_date: requiredText(formData, "lesson_date"),
-      start_time: optionalText(formData, "start_time") ?? enrollment.start_time,
-      end_time: optionalText(formData, "end_time"),
-      attendance_status: null,
-      title: goal,
-      content: buildLessonRecordContent(contentFields),
-      homework: optionalText(formData, "next_plan"),
-      memo: optionalText(formData, "remarks")
-    })
-    .select("lesson_record_id")
-    .single();
+  const { error } = await supabase.from("lesson_records").insert({
+    student_id: enrollment.student_id,
+    course_id: enrollment.course_id,
+    staff_id: staffId,
+    lesson_date: requiredText(formData, "lesson_date"),
+    start_time: optionalText(formData, "start_time") ?? enrollment.start_time,
+    end_time: optionalText(formData, "end_time"),
+    attendance_status: null,
+    title: goal,
+    content: buildLessonRecordContent(contentFields),
+    homework: optionalText(formData, "next_plan"),
+    memo: optionalText(formData, "remarks")
+  });
 
   if (error) throw error;
+
+  const draftDate = resolveIsoDateParam(requiredText(formData, "lesson_date"));
+  const draftWeekday = weekdayFromDate(draftDate) ?? "";
 
   revalidatePath("/lesson-records");
   revalidatePath("/lesson-records/new");
   revalidatePath(`/students/${enrollment.student_id}`);
 
-  const redirectTo = optionalText(formData, "redirect_to");
-  if (redirectTo && redirectTo.startsWith("/lesson-records/new")) {
-    redirect(redirectTo);
-  }
-  redirect(`/lesson-records/${data.lesson_record_id}`);
+  redirect(
+    lessonRecordsNewHrefFromFields({
+      weekday: draftWeekday,
+      date: draftDate,
+      message: "下書きを保存しました。"
+    })
+  );
 }
 
 export async function deleteEnrollment(formData: FormData) {
@@ -736,6 +996,8 @@ export async function deleteEnrollment(formData: FormData) {
 }
 
 export async function bulkPromoteGrades() {
+  await assertCurrentUserIsAdmin();
+
   const supabase = await createClient();
 
   const { data: students, error } = await supabase
@@ -758,94 +1020,6 @@ export async function bulkPromoteGrades() {
 
   revalidatePath("/students");
   revalidatePath("/dashboard");
-}
-
-export async function createMockLessonRecords() {
-  const supabase = await createClient();
-
-  const { error: coursesError } = await supabase.from("courses").upsert(mockCourses, {
-    onConflict: "course_id"
-  });
-  if (coursesError) throw coursesError;
-
-  const students = mockStudentSeeds.map(([lastName, firstName, lastNameKana, firstNameKana, grade], index) => ({
-    student_id: mockUuid("20000000", index + 1),
-    last_name: lastName,
-    first_name: firstName,
-    last_name_kana: lastNameKana,
-    first_name_kana: firstNameKana,
-    grade,
-    phone: `090-4000-${String(index + 1).padStart(4, "0")}`,
-    email: `mock-student-${String(index + 1).padStart(2, "0")}@example.com`,
-    notes: "画面確認用の仮生徒データ"
-  }));
-
-  const { error: studentsError } = await supabase.from("students").upsert(students, {
-    onConflict: "student_id"
-  });
-  if (studentsError) throw studentsError;
-
-  const enrollments = mockStudentSeeds.map((seed, index) => {
-    const [, , , , , weekday, startTime, courseIndex] = seed;
-    return {
-      enrollment_id: mockUuid("20000001", index + 1),
-      student_id: mockUuid("20000000", index + 1),
-      course_id: mockCourses[courseIndex].course_id,
-      schedule_label: `${weekday} ${startTime}`,
-      weekday,
-      start_time: startTime,
-      frequency: "weekly",
-      start_date: previousLessonDateForWeekday(weekday, 10),
-      status: "active"
-    };
-  });
-
-  const { error: enrollmentsError } = await supabase.from("enrollments").upsert(enrollments, {
-    onConflict: "enrollment_id"
-  });
-  if (enrollmentsError) throw enrollmentsError;
-
-  const lessonRecords = mockStudentSeeds.flatMap((seed, index) => {
-    const [, , , , , weekday, startTime, courseIndex] = seed;
-    const courseName = mockCourses[courseIndex].course_name;
-
-    return Array.from({ length: 8 }, (_, weekOffset) => {
-      const attendanceStatus =
-        (index + weekOffset) % 11 === 0 ? "absent" : (index * 2 + weekOffset) % 13 === 0 ? "late" : "present";
-      const title = attendanceStatus === "absent" ? "欠席" : mockLessonTitle(courseName, weekOffset);
-
-      return {
-        lesson_record_id: mockLessonRecordUuid(index + 1, weekOffset),
-        student_id: mockUuid("20000000", index + 1),
-        course_id: mockCourses[courseIndex].course_id,
-        lesson_date: previousLessonDateForWeekday(weekday, weekOffset),
-        start_time: startTime,
-        end_time: addMinutes(startTime, 90),
-        attendance_status: attendanceStatus,
-        title,
-        content: attendanceStatus === "absent" ? null : mockLessonContent(courseName, title, index, weekOffset),
-        homework:
-          attendanceStatus === "absent"
-            ? null
-            : [
-                "今日の続きを家で試してみること。",
-                "作ったものを保存して次回見せること。",
-                "次回やりたいアレンジを考えてくること。"
-              ][weekOffset % 3],
-        memo: "仮データ"
-      };
-    });
-  });
-
-  const { error: lessonRecordsError } = await supabase.from("lesson_records").upsert(lessonRecords, {
-    onConflict: "lesson_record_id"
-  });
-  if (lessonRecordsError) throw lessonRecordsError;
-
-  revalidatePath("/dashboard");
-  revalidatePath("/students");
-  revalidatePath("/lesson-records");
-  revalidatePath("/lesson-records/new");
 }
 
 export async function createCourse(formData: FormData) {

@@ -6,7 +6,7 @@
 
 - Supabase Authによるログイン必須化（admin / staff ロール制御あり）
 - Dashboardで生徒数、今日の授業記録数、最近更新された生徒を表示
-- 生徒一覧、検索、学年・学校フィルター、CSVエクスポート（adminのみ）
+- 生徒一覧、詳細条件での検索・学年・学校フィルター（adminのみが連絡先などを閲覧）
 - 生徒登録・基本情報編集
 - 生徒詳細で保護者、緊急連絡先、受講コース、授業履歴を表示
 - 保護者、緊急連絡先、受講コース、授業記録の追加
@@ -14,7 +14,8 @@
 - 出席管理（日付別の出欠ステータス更新）
 - 週間スケジュール（担当講師割り当て）
 - 教材・書類アップロード（Supabase Storage）
-- スタッフ管理（adminのみ）
+- スタッフ管理（adminのみ・オプションで Auth アカウント同時作成）
+- ログインのメール・パスワード変更（設定 → アカウント）
 
 ## セットアップ
 
@@ -45,6 +46,8 @@ supabase/migrations/004_role_based_rls.sql
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+# スタッフのログインアカウントをアプリから作成する場合のみ（サーバー専用・Git に含めない）
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
 **ローカル開発では本番 Supabase を指さないでください。** URL のホスト名（`xxxx.supabase.co` の `xxxx`）が本番プロジェクトと一致していると、`npm run dev` でも本番データを読み書きします。検証用プロジェクトを用意し、その **Project URL** と **anon key** を `.env.local` に設定してください。本番に戻す前に必ず値を確認すること。
@@ -53,9 +56,28 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 ### 4. adminアカウントを作成
 
-1. Supabase Dashboard → **Authentication → Users → Add user** でオーナー用メールを登録
-2. アプリに一度ログイン
-3. Supabase **Table Editor → staff** でそのユーザーの `role` を `admin` に変更
+1. Supabase Dashboard → **Authentication → Users → Add user** でオーナー用メールとパスワードを登録（または招待メール経由でパスワード設定）
+2. 作成したユーザーの **User UID**（UUID）をコピーする
+3. Supabase **Table Editor → staff** で、対応する行の **`auth_user_id`** にその UUID を設定する（シードや手入力で `staff` 行がある場合）。メールは Auth のメールと **`staff.email` を一致**させると運用しやすいです
+4. アプリにログインできることを確認する
+5. そのユーザーの `role` を `admin` にする（初期待ちオーナーの場合）
+
+**講師・スタッフを `/staff` から追加した場合（Dashboard を使わない）:** 管理者は「ログイン用アカウントも作成する」をオンにすると、**アプリから Supabase Auth にユーザーを作成し `staff.auth_user_id` を設定できます。** そのために `.env.local`（および Vercel の Environment Variables）に **`SUPABASE_SERVICE_ROLE_KEY`** を追加してください（Dashboard → Project Settings → API → `service_role`）。このキーは **サーバー専用**で、クライアントや公開リポジトリに置かないでください。
+
+従来どおり Dashboard でユーザーを追加する場合は、引き続き次の手順です。
+
+1. Supabase **Authentication → Users → Add user** で、**`staff.email` と同じメール**でユーザーを作成し、パスワードを設定する（または招待）
+2. そのユーザーの **User UID** を **`staff.auth_user_id`** にコピーする（Table Editor または SQL）
+
+```sql
+update public.staff
+set auth_user_id = 'ここに-auth-users-の-uuid'
+where email = 'teacher@example.com';
+```
+
+スタッフ本人は **設定 → アカウント**（`/settings/account`）からログインの **メール変更**（確認メール経由）・**パスワード変更**ができます。
+
+管理者が `/staff` の一覧で **既にログイン連携済み**の先生のメールだけを書き換えた場合、**Authentication 側のログインメールは自動では変わりません。** 本人にアカウント画面から変更してもらうか、Dashboard の Users で合わせてください。
 
 ### 5. Storageバケットを作成
 
@@ -183,6 +205,10 @@ npm run lint
 - 破壊的変更（列削除/型変更）は避け、追加ベースで進める
 - 本番前に検証DBで同じ変更を適用して確認する
 - 新しいマイグレーションファイルは `supabase/migrations/` に追番で追加する
+
+## 関連ドキュメント
+
+- 一式サマリー（単体で引き継ぎ可能・文中に外部リンクなし）: `docs/staff-accounts-and-auth-policy.md`
 
 ## 次にやること
 

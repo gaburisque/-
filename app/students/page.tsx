@@ -1,19 +1,32 @@
 import Link from "next/link";
-import { Search, UserPlus } from "lucide-react";
+import { Filter, Search, SlidersHorizontal } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/empty-state";
-import { GradePromotionButton } from "@/components/grade-promotion-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { isCurrentUserAdmin } from "@/lib/authz";
 import { fullName } from "@/lib/format";
-import { formatGradeOrAge, gradeOptions, nextGrade, normalizeGrade } from "@/lib/grades";
+import { formatGradeOrAge, gradeOptions } from "@/lib/grades";
 import { one } from "@/lib/relations";
 import { createClient } from "@/lib/supabase/server";
 import type { School, Student } from "@/lib/types";
+
+function buildStudentsListPath(
+  base: { q?: string; grade?: string; school_id?: string },
+  overrides: Partial<{ q: string | undefined; grade: string | undefined; school_id: string | undefined }>
+) {
+  const merged = { ...base, ...overrides };
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(merged)) {
+    if (v !== undefined && v !== "") sp.set(k, v);
+  }
+  const qs = sp.toString();
+  return qs ? `/students?${qs}` : "/students";
+}
 
 export default async function StudentsPage({
   searchParams
@@ -22,6 +35,7 @@ export default async function StudentsPage({
 }) {
   const params = await searchParams;
   const supabase = await createClient();
+  const isOwner = await isCurrentUserAdmin();
 
   const schoolsResult = await supabase
     .from("schools")
@@ -30,9 +44,13 @@ export default async function StudentsPage({
 
   const schools = (schoolsResult.data ?? []) as School[];
 
+  const selectColumns = isOwner
+    ? "student_id,last_name,first_name,last_name_kana,first_name_kana,grade,birth_date,status,phone,email,updated_at,schools(school_name)"
+    : "student_id,last_name,first_name,last_name_kana,first_name_kana,grade,birth_date,status,updated_at";
+
   let query = supabase
     .from("students")
-    .select("student_id,last_name,first_name,last_name_kana,first_name_kana,grade,birth_date,status,phone,email,updated_at,schools(school_name)")
+    .select(selectColumns)
     .order("last_name_kana", { ascending: true, nullsFirst: false });
 
   if (params.q) {
@@ -53,84 +71,128 @@ export default async function StudentsPage({
   const { data: students } = await query;
 
   const activeStudents = (students ?? []) as unknown as (Student & { birth_date?: string | null })[];
-  const promotingStudents = activeStudents.filter(
-    (s) => s.status === "active" && normalizeGrade(s.grade) !== null
-  );
-  const graduatingCount = promotingStudents.filter((s) => nextGrade(s.grade) === null).length;
+
+  const preserved = {
+    q: params.q,
+    grade: params.grade,
+    school_id: params.school_id
+  };
+
+  const hasDetailFilters = Boolean(params.q || params.grade || params.school_id);
+
+  const activeFilters: { label: string; href: string }[] = [];
+  if (params.q) {
+    activeFilters.push({
+      label: `検索: ${params.q}`,
+      href: buildStudentsListPath(preserved, { q: undefined })
+    });
+  }
+  if (params.grade) {
+    activeFilters.push({
+      label: `学年: ${params.grade}`,
+      href: buildStudentsListPath(preserved, { grade: undefined })
+    });
+  }
+  if (params.school_id) {
+    const sch = schools.find((s) => s.school_id === params.school_id);
+    activeFilters.push({
+      label: `学校: ${sch?.school_name ?? params.school_id}`,
+      href: buildStudentsListPath(preserved, { school_id: undefined })
+    });
+  }
 
   return (
     <AppShell>
-      <div className="space-y-6">
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">生徒</h1>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {students?.length ?? 0}件 ・ 検索 / 学年・学校で絞り込み
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <GradePromotionButton
-              promotingCount={promotingStudents.length}
-              graduatingCount={graduatingCount}
-            />
-            <Button asChild variant="outline" size="sm">
-              <a href="/api/students/export" download>
-                CSV出力
-              </a>
-            </Button>
-            <Button asChild size="sm">
-              <Link href="/students/new">
-                <UserPlus className="h-4 w-4" />
-                生徒を追加
-              </Link>
-            </Button>
-          </div>
+      <div className="mx-auto max-w-4xl space-y-6">
+        <header className="border-b pb-4">
+          <h1 className="text-xl font-semibold tracking-tight">生徒</h1>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {students?.length ?? 0}件
+            {!isOwner ? " ・ 学校・連絡先はオーナーのみ表示されます" : ""}
+          </p>
         </header>
 
-        <form className="grid gap-2 md:grid-cols-[1fr_180px_220px_auto]">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              name="q"
-              defaultValue={params.q ?? ""}
-              placeholder="氏名・ふりがなで検索"
-              className="pl-9"
-            />
+        {activeFilters.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+            {activeFilters.map((f) => (
+              <Link
+                key={f.label}
+                href={f.href}
+                className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs hover:bg-muted"
+              >
+                {f.label}
+                <span className="text-muted-foreground">×</span>
+              </Link>
+            ))}
+            <Link
+              href="/students"
+              className="text-xs text-muted-foreground underline underline-offset-2"
+            >
+              すべて解除
+            </Link>
           </div>
-          <NativeSelect name="grade" defaultValue={params.grade ?? ""} aria-label="学年">
-            <option value="">すべての学年</option>
-            {gradeOptions.map((grade) => (
-              <option key={grade} value={grade}>
-                {grade}
-              </option>
-            ))}
-          </NativeSelect>
-          <NativeSelect
-            name="school_id"
-            defaultValue={params.school_id ?? ""}
-            aria-label="学校"
-          >
-            <option value="">すべての学校</option>
-            {schools.map((school) => (
-              <option key={school.school_id} value={school.school_id}>
-                {school.school_name}
-              </option>
-            ))}
-          </NativeSelect>
-          <Button type="submit" variant="outline">
-            絞り込み
-          </Button>
-        </form>
+        ) : null}
+
+        <details
+          className="group rounded-lg border bg-card"
+          {...(hasDetailFilters ? { open: true } : {})}
+        >
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium">
+            <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+            詳細条件
+            <span className="ml-auto text-xs font-normal text-muted-foreground group-open:hidden">
+              開く
+            </span>
+          </summary>
+          <form action="/students" method="get" className="space-y-4 border-t px-4 py-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="relative sm:col-span-2">
+                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  name="q"
+                  defaultValue={params.q ?? ""}
+                  placeholder="氏名・ふりがなで検索"
+                  className="pl-9"
+                  aria-label="氏名・ふりがな検索"
+                />
+              </div>
+              <NativeSelect name="grade" defaultValue={params.grade ?? ""} aria-label="学年">
+                <option value="">すべての学年</option>
+                {gradeOptions.map((grade) => (
+                  <option key={grade} value={grade}>
+                    {grade}
+                  </option>
+                ))}
+              </NativeSelect>
+              <NativeSelect
+                name="school_id"
+                defaultValue={params.school_id ?? ""}
+                aria-label="学校"
+              >
+                <option value="">すべての学校</option>
+                {schools.map((school) => (
+                  <option key={school.school_id} value={school.school_id}>
+                    {school.school_name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            <Button type="submit" variant="outline" size="sm">
+              この条件で絞り込み
+            </Button>
+          </form>
+        </details>
 
         {students && students.length > 0 ? (
           <div className="overflow-x-auto rounded-md border">
-            <Table className="min-w-[720px]">
+            <Table className={isOwner ? "min-w-[720px]" : "min-w-[420px]"}>
               <TableHeader>
                 <TableRow>
                   <TableHead>氏名</TableHead>
                   <TableHead className="w-[100px]">学年</TableHead>
-                  <TableHead>学校</TableHead>
-                  <TableHead>連絡先</TableHead>
+                  {isOwner ? <TableHead>学校</TableHead> : null}
+                  {isOwner ? <TableHead>連絡先</TableHead> : null}
                   <TableHead className="w-[80px]">状態</TableHead>
                 </TableRow>
               </TableHeader>
@@ -153,13 +215,17 @@ export default async function StudentsPage({
                     <TableCell className="text-sm">
                       {formatGradeOrAge(student.grade, student.birth_date)}
                     </TableCell>
-                    <TableCell className="text-sm">
-                      {one(student.schools)?.school_name ?? "-"}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      <div>{student.phone ?? "-"}</div>
-                      <div className="text-xs text-muted-foreground">{student.email ?? ""}</div>
-                    </TableCell>
+                    {isOwner ? (
+                      <TableCell className="text-sm">
+                        {one(student.schools)?.school_name ?? "-"}
+                      </TableCell>
+                    ) : null}
+                    {isOwner ? (
+                      <TableCell className="text-sm">
+                        <div>{student.phone ?? "-"}</div>
+                        <div className="text-xs text-muted-foreground">{student.email ?? ""}</div>
+                      </TableCell>
+                    ) : null}
                     <TableCell>
                       <Badge>{student.status}</Badge>
                     </TableCell>
@@ -171,6 +237,16 @@ export default async function StudentsPage({
         ) : (
           <EmptyState>条件に一致する生徒がいません。</EmptyState>
         )}
+
+        {!isOwner ? (
+          <p className="text-xs text-muted-foreground">
+            生徒の新規登録・一括進級は{" "}
+            <Link href="/settings" className="text-primary underline underline-offset-2">
+              設定
+            </Link>{" "}
+            （オーナー向け）から利用できます。
+          </p>
+        ) : null}
       </div>
     </AppShell>
   );

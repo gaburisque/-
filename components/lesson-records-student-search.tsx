@@ -1,13 +1,15 @@
 "use client";
 
 import { Search, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fullName } from "@/lib/format";
-import { formatGrade } from "@/lib/grades";
+import { buildLessonRecordsListPath } from "@/lib/lesson-records-list-url";
+import { buildLessonRecordsNewPath } from "@/lib/lesson-records-new-url";
 
 export type LessonRecordsStudentSearchOption = {
   student_id: string;
@@ -32,24 +34,58 @@ function matchesQuery(s: LessonRecordsStudentSearchOption, q: string): boolean {
 
 export function LessonRecordsStudentSearch({
   students,
-  selectedStudentId
+  selectedStudentId,
+  compact,
+  searchHint,
+  omitHiddenStudentField,
+  onPickStudent,
+  onClearStudent,
+  onQueryEdit,
+  ...nav
 }: {
   students: LessonRecordsStudentSearchOption[];
   selectedStudentId?: string;
-}) {
+  searchHint?: string;
+  compact?: boolean;
+  /** 記録入力など、GETフォームに student_id を載せたくないとき true */
+  omitHiddenStudentField?: boolean;
+  /** 指定時は選択・クリアでルーターを使わずコールバック（記録入力でリロード回避） */
+  onPickStudent?: (studentId: string) => void;
+  onClearStudent?: () => void;
+  /** 検索文字を編集し始めたとき（親が URL の student_id を外す用途） */
+  onQueryEdit?: () => void;
+} & (
+  | {
+      navBase: Record<string, string>;
+      inputNavigateBase?: never;
+    }
+  | {
+      inputNavigateBase: Record<string, string>;
+      navBase?: never;
+    }
+)) {
+  const navBase = "navBase" in nav ? nav.navBase : undefined;
+  const inputNavigateBase = "inputNavigateBase" in nav ? nav.inputNavigateBase : undefined;
+  const isCompact = Boolean(compact);
+  const hideStudentField = Boolean(omitHiddenStudentField);
+  const router = useRouter();
   const selected = students.find((s) => s.student_id === selectedStudentId);
   const [query, setQuery] = useState("");
   const [studentId, setStudentId] = useState(selectedStudentId ?? "");
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const skipQuerySyncFromParentRef = useRef(false);
 
   useEffect(() => {
+    if (skipQuerySyncFromParentRef.current) {
+      skipQuerySyncFromParentRef.current = false;
+      setStudentId(selectedStudentId ?? "");
+      return;
+    }
     setStudentId(selectedStudentId ?? "");
     if (selected) {
-      setQuery(
-        `${fullName(selected)}${selected.grade ? ` · ${formatGrade(selected.grade)}` : ""}`
-      );
-    } else {
+      setQuery(fullName(selected));
+    } else if (!selectedStudentId) {
       setQuery("");
     }
   }, [selectedStudentId, selected]);
@@ -70,31 +106,80 @@ export function LessonRecordsStudentSearch({
 
   function pick(s: LessonRecordsStudentSearchOption) {
     setStudentId(s.student_id);
-    setQuery(`${fullName(s)}${s.grade ? ` · ${formatGrade(s.grade)}` : ""}`);
+    setQuery(fullName(s));
     setOpen(false);
+    if (onPickStudent) {
+      onPickStudent(s.student_id);
+      return;
+    }
+    if (inputNavigateBase) {
+      router.push(
+        buildLessonRecordsNewPath(inputNavigateBase, {
+          student_id: s.student_id,
+          enrollment_id: ""
+        })
+      );
+    } else if (navBase) {
+      router.push(
+        buildLessonRecordsListPath(navBase, { student_id: s.student_id, page: "1" })
+      );
+    }
   }
 
   function clearSelection() {
     setStudentId("");
     setQuery("");
     setOpen(false);
+    if (onClearStudent) {
+      onClearStudent();
+      return;
+    }
+    if (inputNavigateBase) {
+      router.push(
+        buildLessonRecordsNewPath(inputNavigateBase, {
+          student_id: "",
+          enrollment_id: ""
+        })
+      );
+    } else if (navBase) {
+      router.push(buildLessonRecordsListPath(navBase, { page: "1" }));
+    }
   }
 
   const showSuggestions = open && query.trim().length > 0;
 
+  const defaultListHint =
+    "リストから選ぶと一覧がすぐ更新され、その生徒の過去の記録が表示されます（入力だけでは絞り込みません）。";
+  const hintParagraph =
+    searchHint !== undefined ? searchHint : isCompact ? null : defaultListHint;
+
   return (
-    <div ref={wrapRef} className="relative space-y-1.5 sm:col-span-2">
-      <Label htmlFor="lesson-records-student-search">生徒</Label>
-      <input type="hidden" name="student_id" value={studentId} readOnly />
+    <div
+      ref={wrapRef}
+      className={isCompact ? "relative w-full space-y-1.5" : "relative space-y-1.5 sm:col-span-2"}
+    >
+      {isCompact ? null : (
+        <Label htmlFor="lesson-records-student-search">生徒</Label>
+      )}
+      {!hideStudentField ? (
+        <input type="hidden" name="student_id" value={studentId} readOnly />
+      ) : null}
       <div className="relative flex gap-2">
         <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
           id="lesson-records-student-search"
           autoComplete="off"
-          placeholder="氏名・ふりがなの一部で検索し、一覧から選ぶ"
+          aria-label={isCompact ? "生徒を検索" : undefined}
+          placeholder={
+            isCompact ? "氏名・かなで検索" : "氏名・ふりがなの一部で検索し、一覧から選ぶ"
+          }
           className="flex-1 pl-9 pr-9"
           value={query}
           onChange={(e) => {
+            if (onQueryEdit) {
+              skipQuerySyncFromParentRef.current = true;
+              onQueryEdit();
+            }
             setQuery(e.target.value);
             setStudentId("");
             setOpen(true);
@@ -131,7 +216,6 @@ export function LessonRecordsStudentSearch({
                 <span className="font-medium">{fullName(s)}</span>
                 <span className="text-xs text-muted-foreground">
                   {[s.last_name_kana, s.first_name_kana].filter(Boolean).join(" ") || "—"}
-                  {s.grade ? ` · ${formatGrade(s.grade)}` : ""}
                 </span>
               </button>
             </li>
@@ -145,9 +229,9 @@ export function LessonRecordsStudentSearch({
         </p>
       ) : null}
 
-      <p className="text-[11px] text-muted-foreground">
-        リストから選ぶとその生徒に絞り込みます（入力だけでは絞り込みません）。
-      </p>
+      {hintParagraph ? (
+        <p className="text-[11px] text-muted-foreground">{hintParagraph}</p>
+      ) : null}
     </div>
   );
 }

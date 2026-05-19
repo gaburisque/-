@@ -352,7 +352,7 @@ on conflict (enrollment_id) do update set
   status = excluded.status;
 
 -- ============================================================
--- テスト生徒 1〜20 の授業記録
+-- テスト生徒 1〜100 の授業記録
 -- 受講登録の weekday から授業日を逆算して直近12週分を生成。
 -- 曜日ごとのグループに自動で分配される。
 -- ============================================================
@@ -360,7 +360,7 @@ with
 weekday_dow (weekday, dow) as (
   values ('月'::text,1),('火',2),('水',3),('木',4),('金',5),('土',6)
 ),
--- 対象生徒（n=1〜20）の受講情報
+-- 対象生徒（n=1〜100）の受講情報
 enrollments_20 as (
   select
     n.n,
@@ -368,7 +368,7 @@ enrollments_20 as (
     e.course_id,
     e.start_time,
     wd.dow
-  from generate_series(1, 20) as n(n)
+  from generate_series(1, 100) as n(n)
   join public.enrollments e
     on e.student_id = ('10000000-0000-4000-8000-' || lpad(n.n::text, 12, '0'))::uuid
     and e.status = 'active'

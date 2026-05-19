@@ -1,24 +1,37 @@
 import Link from "next/link";
+import type { ComponentType } from "react";
 import {
   BookOpen,
   CalendarCheck,
   ChevronRight,
   FileStack,
-  UserCog
+  KeyRound,
+  UserCog,
+  UserPlus
 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import { GradePromotionButton } from "@/components/grade-promotion-button";
+import { Button } from "@/components/ui/button";
 import { isCurrentUserAdmin } from "@/lib/authz";
+import { nextGrade, normalizeGrade } from "@/lib/grades";
+import { createClient } from "@/lib/supabase/server";
 
 type SettingsCard = {
   href: string;
   label: string;
   description: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   adminOnly?: boolean;
 };
 
 const cards: SettingsCard[] = [
+  {
+    href: "/settings/account",
+    label: "アカウント",
+    description: "ログインのパスワードを変更",
+    icon: KeyRound
+  },
   {
     href: "/courses",
     label: "コース",
@@ -50,6 +63,39 @@ export default async function SettingsPage() {
   const isAdmin = await isCurrentUserAdmin();
   const visibleCards = cards.filter((c) => !c.adminOnly || isAdmin);
 
+  let ownerStudentTools = null;
+  if (isAdmin) {
+    const supabase = await createClient();
+    const { data: gradeRows } = await supabase.from("students").select("grade").eq("status", "active");
+
+    const promotingStudents = (gradeRows ?? []).filter((s) => normalizeGrade(s.grade) !== null);
+    const graduatingCount = promotingStudents.filter((s) => nextGrade(s.grade) === null).length;
+
+    ownerStudentTools = (
+      <section className="rounded-lg border border-primary/15 bg-primary/[0.04] p-4 sm:p-5">
+        <h2 className="text-sm font-semibold tracking-tight">オーナー向け（生徒）</h2>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          4月進級の一括処理・新規の生徒登録は管理者のみ実行できます。一覧の電話・メールも管理者のみ表示されます。
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <GradePromotionButton
+            promotingCount={promotingStudents.length}
+            graduatingCount={graduatingCount}
+          />
+          <Button asChild variant="secondary" size="sm">
+            <Link href="/students/new">
+              <UserPlus className="h-4 w-4" />
+              生徒を登録
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/students">生徒一覧へ</Link>
+          </Button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -59,6 +105,8 @@ export default async function SettingsPage() {
             コース・出欠・教材・スタッフの管理
           </p>
         </header>
+
+        {ownerStudentTools}
 
         <div className="grid gap-3 sm:grid-cols-2">
           {visibleCards.map((card) => {

@@ -21,6 +21,7 @@ import {
   parseLessonRecordContent,
   type LessonRecordContentFields
 } from "@/lib/lesson-record-content";
+import { lessonTimeSelectOptions } from "@/lib/lesson-times";
 import { createClient } from "@/lib/supabase/server";
 import type { Course, LessonRecord, LessonRecordHistory } from "@/lib/types";
 
@@ -283,11 +284,25 @@ export default async function LessonRecordDetailPage({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="start_time">開始時刻</Label>
-                <Input id="start_time" name="start_time" type="time" defaultValue={startTime} />
+                <NativeSelect id="start_time" name="start_time" defaultValue={startTime}>
+                  <option value="">未設定</option>
+                  {lessonTimeSelectOptions(startTime || undefined).map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </NativeSelect>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="end_time">終了時刻</Label>
-                <Input id="end_time" name="end_time" type="time" defaultValue={endTime} />
+                <NativeSelect id="end_time" name="end_time" defaultValue={endTime}>
+                  <option value="">未設定</option>
+                  {lessonTimeSelectOptions(endTime || undefined).map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </NativeSelect>
               </div>
 
               <LessonRecordFormFields defaults={formDefaults} />

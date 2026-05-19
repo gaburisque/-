@@ -41,3 +41,10 @@ export async function isCurrentUserAdmin(): Promise<boolean> {
 
   return staff?.role === "admin";
 }
+
+/** Server Actions などで使用。非管理者なら例外を投げる。 */
+export async function assertCurrentUserIsAdmin(): Promise<void> {
+  if (!(await isCurrentUserAdmin())) {
+    throw new Error("この操作はオーナー（管理者）のみ実行できます。");
+  }
+}

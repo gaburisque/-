@@ -141,3 +141,24 @@ export type LessonRecord = {
   courses?: Pick<Course, "course_id" | "course_name"> | null;
   staff?: Pick<Staff, "staff_id" | "name"> | null;
 };
+
+
+export type StudentChangeHistory = {
+  id: string;
+  student_id: string | null;
+  changed_by: string | null;
+  changed_at: string;
+  field_name: string;
+  old_value: string | null;
+  new_value: string | null;
+};
+
+export type StaffChangeHistory = {
+  id: string;
+  staff_id: string | null;
+  changed_by: string | null;
+  changed_at: string;
+  field_name: string;
+  old_value: string | null;
+  new_value: string | null;
+};
